@@ -93,8 +93,10 @@ Physical text and Recording-mode voice/replies were user-confirmed; the user
 preferred Pebble's Chinese transcription and chose Both. A signed synthetic M4A
 also received cloud voice ACK and duplicate confirmation. A combined text/M4A
 submission received ACK and duplicate confirmation on the latest deployment;
-the official SDK serializer test verifies both items in one request. Both ring
-behavior and Watch sync/push still need physical verification. A text-only
+the official SDK serializer test verifies both items in one request. The user
+also verified Both ring delivery, its unchanged Pebble text, complete playable
+audio and Muse reply. Muse displayed additional recognition text; its exact
+internal composition is not exposed by the SDK. Watch sync/push is still unverified. A text-only
 display cannot establish whether Muse retained or exposed audio, and the bridge
 does not control how Muse weighs text against voice. Phone background scheduling
 can delay upload before Cloud Run receives anything; Both also waits for ASR.

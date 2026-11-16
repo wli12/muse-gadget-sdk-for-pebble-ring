@@ -1,0 +1,7 @@
+# Experimental macOS BLE transport only; Python 3.11+ is required by PyObjC 13.0.
+# Install the Muse Gadget SDK and its Python dependencies separately, e.g.
+# python -m pip install /path/to/muse-gadget-sdk/linux
+# These are the PyObjC versions used by the original macOS pairing prototype.
+pyobjc-core==13.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa==13.0; sys_platform == "darwin"
+pyobjc-framework-CoreBluetooth==13.0; sys_platform == "darwin"

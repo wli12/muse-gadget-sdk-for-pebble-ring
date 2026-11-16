@@ -20,6 +20,10 @@ to ``/ingest`` (multipart form or JSON, authenticated with a shared secret),
 and this hands it to ``musegadget send-user-msg``, which delivers it over the device's
 existing connection to the Muse. It holds no Muse credentials itself.
 
+For a separately deployed Cloud Run variant with signed Pebble webhooks,
+durable deduplication and no local always-on host, see
+``pebble_ring_bridge_cloudrun/README.md`` next to this example.
+
 Configuration (environment):
   PEBBLE_SESSION_ID   side chat to post into (required)
   PEBBLE_SECRET_FILE  file holding the shared secret (default /etc/pebble-bridge/secret)

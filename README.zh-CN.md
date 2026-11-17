@@ -1,15 +1,55 @@
-# G3：Pebble Index One → Google Cloud Run → Muse
+<!--
+Copyright (c) Meta Platforms, Inc. and affiliates.
 
-English overview: This guide reproduces an optional Cloud Run bridge built on the official Muse Gadget SDK. Pebble's Both mode supplies its transcription and recording; Google converts M4A locally to bounded WAV and submits both in one official `send_voice(wav, message=transcription, output_modality='text')` request to the same Muse chat. Recording-only and text-only payloads are also supported. No mode uses a wake word or semantic routing. A Mac or Linux Bluetooth host is needed only for initial pairing. Verification status and remaining limits are recorded below.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-本文记录最终实现、可复现的安装步骤、隐私边界和运行维护。部署项目、运行账户和 Webhook 地址均使用占位符；公开源码使用实际 GitHub 地址。仓库不包含真实设备凭证、Webhook 密钥、个人聊天记录或录音。
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+# Pebble Index 01 → Google Cloud Run → Muse
+
+[English](README.md) | 简体中文
+
+把 Pebble Index 01 的转写和录音通过自己的 Google Cloud Run 发送到 Meta 的 Muse 主聊天。本指南涵盖准备条件、配对、部署、手机设置、代码来源、验证和运行维护。部署项目、运行账户和 Webhook 地址均为占位符；公开源码使用实际 GitHub 地址。仓库不包含真实设备凭证、密钥、聊天或录音。
+
+**当前状态（2026-11-17）：** Cloud Run 健康、签名与鉴权检查通过；Muse Link 的 WebSocket 握手仍返回 502，在发送前失败，最新真实投递尚未通过。2026-11-16 的成功验收属于历史记录，详见第 1、11 节。
+
+## 0. 开始前需要什么
+
+| 准备项 | 具体要求与官方入口 |
+| --- | --- |
+| 戒指 | 一枚 [Pebble Index 01](https://repebble.com/products/pebble-index-01)，先按[官方入门指南](https://help.repebble.com/en/articles/15434751-index-01-getting-started-guide)与手机配对。无需购买 Pebble 手表。 |
+| 手机 | **iPhone 或 Android 都可以，不限于 Google Pixel。** iPhone 的整套路径当前要求 **iOS 18 或更高版本**，这是 Muse 的要求；Android 可使用能够安装下列两款 App 的手机，包括兼容的 Pixel 型号。Android 的实际最低系统版本以两款 App 的商店兼容性为准，不能把 Pebble 单独要求的 Android 8.0 当作整套方案的最低版本。 |
+| 手机 App、Muse 账户与 token | 安装 [Pebble App](https://repebble.com/app) 和 Meta 的 Muse（[iPhone](https://apps.apple.com/us/app/muse-from-meta/id6760173601)、[Android](https://play.google.com/store/apps/details?id=com.facebook.aura)）。登录自己的 Muse 账户，申请 [Muse Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens)，并阅读 [SDK 条款](https://gadgets.muse.ai/sdk-terms)。Pebble 应已能接收、转写戒指录音并提供签名 Webhook 设置。 |
+| Google Cloud | 一个 Google 账户、可用的 Cloud Billing 结算账户，以及关联该结算账户的 Google Cloud 项目；下面有注册步骤。已有符合条件的账户和项目可复用，独立项目更容易管理和清理。 |
+| 首次设置用的电脑 | Python 3.12、Git 和 [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)。Muse 设备首次配对还需要带 BLE 的 Linux 主机，或使用本项目实验性适配器的 Mac；两种配对方式选一种。之后可用本机或 [Cloud Shell](https://docs.cloud.google.com/shell/docs/launching-cloud-shell) 执行部署。 |
+| 日常连接 | 戒指通过手机蓝牙传输录音；手机需要联网，才能将 Webhook 发到 Google Cloud。只在首次设置时使用的电脑不必常开，Cloud Run 不需要蓝牙。 |
+
+“蓝牙只用于一次配对”指 **Muse 手机 App 与 Mac/Linux 设备身份的设置**；日常戒指到手机的蓝牙传输仍然需要。Apple Watch 是可选设备，不是前置条件；回答同步或通知仍需单独验证。
+
+### 注册 Google Cloud 并准备项目
+
+1. 打开 [Google Cloud 官方免费入口](https://cloud.google.com/free)，用已有 Google 账户登录，或按页面创建 Google 账户。符合条件的新用户可以选择官方免费试用；额度、期限和资格以该页面为准。
+2. 按 Google 注册页面填写实际地区及所需信息，完成身份和付款方式验证。**即使用免费额度，项目仍需要有效的结算账户。** 详见[结算账户说明](https://docs.cloud.google.com/billing/docs/how-to/create-billing-account)与[免费试用 FAQ](https://cloud.google.com/signup-faqs)。
+3. 进入 [Google Cloud Console](https://console.cloud.google.com/)，打开项目选择器，选择 **New project / 新建项目**，创建本方案专用项目；详见[创建项目](https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects)。记下 **Project ID**，后面填入 `PROJECT_ID`；它不是项目显示名称或项目数字编号。
+4. 在项目的 **Billing / 结算** 页面，确认项目已关联可用结算账户；如未关联，按[关联结算账户说明](https://docs.cloud.google.com/billing/docs/how-to/modify-project)操作。项目与结算账户是两个不同概念。
+5. 在 Console 右上角启动 **Cloud Shell**（已预装 `gcloud`），或在本机安装 Google Cloud CLI。后面的第 4 节会执行 `gcloud auth login` 并选择项目；BLE 配对仍在本地 Mac/Linux 完成。
+6. 可为该项目设置[预算提醒](https://docs.cloud.google.com/billing/docs/how-to/budgets)。提醒型预算不会自动停止消费。少量使用可能落入免费额度，但不能保证永久零账单；试用不会自动升级成付费账户，试用到期后资源可能停止，是否升级由账户所有者决定。费用与资源限制见第 3 节。
 
 ## 1. 最终行为与验证范围
 
 最终链路是：
 
 ```text
-Index One 戒指
+Index 01 戒指
     │ 蓝牙
     ▼
 手机 Pebble App：根据所选手势发送转写和录音 Webhook
@@ -30,7 +70,7 @@ Muse App 只显示文字，不能据此判断录音是否送达、保留或提�
 
 Pebble 的 **Send test event** 是连接测试，明确不发给 Muse。戒指的其他手势如果仍走 Index Agent，就继续由 Index Agent 处理。当前配置保留 **Hold & talk → Index Agent**、**Double click & hold → Webhook only**；只有后者产生的 Webhook 进入这条链路。想让其他手势也进入 Muse，才需要在手机里调整对应手势。
 
-验证记录：实物链路验收截至 **2026-11-16**，本轮源码检查与独立审查截至 **2026-11-17**。
+验证记录：实物链路验收截至 **2026-11-16**，实现源码检查与独立审查截至 **2026-11-17**；下表将历史成功验收与当前运行状态分开记录。
 
 | 项目 | 结果与含义 |
 | --- | --- |
@@ -42,6 +82,7 @@ Pebble 的 **Send test event** 是连接测试，明确不发给 Muse。戒指�
 | 新录音链路 | 音频/SDK 离线测试及 Linux 镜像内真实 WAV、AAC/M4A、超长拒绝、时间戳间隙保留检查已通过；已部署服务用短合成英语 M4A、有效签名取得语音提交 ACK 200，同 ID 再投返回 duplicate 200，未附加 Pebble 转写 |
 | 录音端到端验收 | **用户已确认 Recording 模式的真实戒指语音与 Muse 回答都收到**；用户比较后认为 Muse 中文识别不如 Pebble，选择恢复 Both |
 | Both 同条提交验收 | 合成 M4A 与文字取得同条提交 ACK 200，重复同 ID 返回 duplicate 200；离线测试验证官方 SDK 请求含文字项和完整音频项。用户随后确认真实戒指 Recent runs 为 recording + transcription，Muse 出现 Pebble 原文、完整可播放录音及回答；还出现额外的识别文字，不能保证 Muse 优先采用哪一份输入 |
+| 2026-11-17 最新云端复验 | `/health` 200、签名连接测试 200、错误鉴权 401；Muse Link 的 WebSocket 握手仍返回 502，中转返回 503，记录为 `failed_before_send`。新旧运行版本均复现；当前未获得新的投递确认 |
 | 长时间运行、所有冷启动与网络故障组合 | 尚未全面实测；不能据此承诺永不掉线或零丢失 |
 | Apple Watch | [官方 Muse App 页面](https://apps.apple.com/us/app/muse-from-meta/id6760173601)列出 watchOS 10.0+，手表已安装官方 Muse；SDK 触发的回答是否同步或推送到 Watch **尚未验证** |
 
@@ -57,12 +98,14 @@ SDK 的 `acknowledged` 表示消息提交得到确认，不能等同于回答已
 | 配对状态、Webhook 密钥、租约、投递记录 | 同一项目的私有 Cloud Storage 桶 | 保存设备身份和去重状态；录音、转写正文不写入桶 |
 | `mac_pairing.py` | 带蓝牙的用户 Mac | 仅在首次配对时运行，完成后退出 |
 | `deploy.sh`、`verify_webhook.py`、测试 | 用户 Mac、Cloud Shell 或构建环境 | 部署和验证，不是常驻中转进程 |
-| fork、分支、PR、G3 | GitHub | 保存公开源码、文档和审阅记录；GitHub 本身不接收戒指 Webhook |
+| fork、分支、PR、双语 README | GitHub | 保存公开源码、文档和审阅记录；GitHub 本身不接收戒指 Webhook |
 | Muse 的识别与任务执行 | Meta 的 Muse 服务 | 处理文字、录音并产生回答 |
 
 本方案没有在 Codex/OpenAI 的机器上托管中转服务。Codex 用于协助编辑工作区、调用部署和检查工具。Mac 保存源码及本地工具；正常使用时，戒指通过手机直接访问 Google Cloud Run，不要求 Mac 开机。GitHub 上传、PR 合并与 Google Cloud 部署是三个独立动作，本项目没有配置“合并即部署”。
 
 ### 哪些来自官方，哪些是新增
+
+本项目 fork 自 [Meta 官方 Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk)。完整 SDK 介绍见[原版 README](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/README.md)。
 
 原示例 [`linux/examples/pebble_ring_bridge.py`](linux/examples/pebble_ring_bridge.py) 是文本 Webhook → `musegadget send-user-msg` → 已运行的 Linux SDK 服务和 Unix socket。本轮对它只做小范围提取：把原来的 MIME 解析与字段读取集中成共享函数 `multipart_fields()`，原 `parse_body()` 改为调用该函数；原本地 HTTP 服务、CLI 发送、JSON／纯文本输入和默认文字解码行为保留。
 
@@ -328,7 +371,7 @@ Pebble **1.18.0 iPhone** 的路径如下，见 [官方 Index 设置源码](https
 6. 启用 **Sign requests**，填本地 `signing_secret`。
 7. Payload 选 **Both** 并保存，等待 Pebble 转写完成后同时发送文字和录音。桥接在一条 Muse 消息中提交两者。若选择 **Recording**，会在 Pebble ASR 前只发送语音；**Transcription** 则只发送文字。
 8. 点 **Send test event**。成功只说明 Webhook 连通、鉴权通过，不应在 Muse 里新增测试聊天。
-9. 用 **Double click & hold** 实际说：“请只回复戒指连接成功。”在 Pebble 核对转写和录音，再在 Muse 主聊天确认消息及回答。App 是否显示音频播放控件不属于桥接能保证的展示行为；仅看到文字不能证明录音丢失。
+9. 使用 **Double click & hold**：先按一下并松开，随即再次按下并保持，讲话后松开。实际说：“请只回复戒指连接成功。”在 Pebble 核对转写和录音，再在 Muse 主聊天确认消息及回答。App 是否显示音频播放控件不属于桥接能保证的展示行为；仅看到文字不能证明录音丢失。
 
 如果关闭了设置页，重新进入**相同手势**的 Webhook 页面，不要误改另一手势。Android 支持相同协议但 UI 可能不同；没有把 iPhone 的点击路径当成 Android 的已验证步骤。
 
@@ -410,7 +453,7 @@ GCS 对象 generation 前置条件用于 compare-and-swap。刷新状态先持�
 
 曾在 Meta WSS 建立阶段遇到 HTTP 502。现在只在**尚未开始发送消息**时，对明确的握手 HTTP 429/500/502/503/504 做最多三次连接尝试，共用 55 秒 SDK 等待预算。实际 `send_chat` / `send_voice` 不自动重试；进入发送阶段后发生不确定错误会记为需人工核对。
 
-2026-11-16 的云端受控测试已恢复并拿到确认与重复投递检查结果。502 仍可能再次发生；不要为此重置有效配对或关闭 TLS/签名。诊断只记录阶段、异常类别、HTTP 状态等受限字段，不记录完整异常文本或远端响应正文。
+2026-11-16 的受控测试曾取得提交确认和重复投递检查结果；2026-11-17 的最新复验再次遇到握手 502，新旧运行版本均复现，记录为发送前失败，尚未取得新的投递确认。这不能据此断言 Meta 全局故障。不要为此重置有效配对或关闭 TLS/签名。诊断只记录阶段、异常类别、HTTP 状态等受限字段，不记录完整异常文本或远端响应正文。
 
 ### 没有“Muse”前缀就不进聊天
 
@@ -430,7 +473,9 @@ Both 中的文字是独立文本项，不是告诉 Muse“录音已经完成识�
 
 官方 [Muse from Meta App Store 页面](https://apps.apple.com/us/app/muse-from-meta/id6760173601) 的 Watch 支持说明，不代表 Gadget SDK 触发的回答必然产生 Watch 推送。目前 Watch App 已安装，账户同步和回答推送仍待验证。本方案没有接入私有通知 API；先以 Muse 主聊天中的消息与回答为准。
 
-## 12. Code Review、可读性要求与精简记录
+## 12. 代码审查、可读性要求与精简记录
+
+更新文档时，请在同一 PR 中同步修改 README.md 和 README.zh-CN.md 的对应章节；两种语言保持相同的操作步骤、命令、配置含义、链接和已知限制。
 
 本分支按 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) 与 [Google Code Review Developer Guide](https://google.github.io/eng-practices/review/reviewer/) 检查命名、职责、复杂度、错误处理、测试和文档；使用 Google 风格格式化和 Pylint 检查。这是采用公开规范的审查，不表示获得 Google 内部 Readability 审批。
 
@@ -452,7 +497,7 @@ Both 中的文字是独立文本项，不是告诉 Muse“录音已经完成识�
 - 删除与 GCS 跨实例租约重复的进程内 HTTP 互斥锁、未使用字段和初始化、未使用赋值与重复保存。
 - 把真实编解码检查并入 `audio_test.py`，不再维护单独的 codec smoke 脚本。最终镜像不包含 pytest 或测试文件。
 - 把人工连通性检查命名为 `verify_webhook.py`，对应 `verify_webhook_test.py`；所有 Python 模块按 `模块名_test.py` 对应。
-- README 仅保留用途、主要文件和测试入口；安装、部署、手机配置和运行维护只在 G3 维护。
+- 云端目录的 README 仅保留用途、主要文件和测试入口；完整安装、部署、手机配置和运行维护分别在根目录的英文 README.md 与中文 README.zh-CN.md 中维护。
 - 按用户要求进一步把 MIME 解析与字段读取提取回官方示例模块，本地入口与 Cloud Run 共同调用；文字和令牌提取直接复用官方函数，保留原示例回归测试。
 
 ### 保留的必要边界
@@ -463,9 +508,11 @@ GCS CAS 和跨实例租约保护轮换凭证；发送前的持久记录避免同
 
 ### 提交前的独立审查
 
-本轮在新增提交前实际运行了 Google [Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli) **1.5.10**，模型 ID 为 **`gemini-4-argon-medium`**。2026-11-17 分为 6 个全新上下文审查，每批低于 80 KB，覆盖全部 19 个拟发布文件及 6 个官方 SDK 参考文件。每批正常返回，文件末行、正文摘要和独立结束标记均已核对；另一轮独立检查也逐行核对了输入覆盖。
+以下为已发布实现版本的审查历史；本次双语文档整理的审查结果另记在同一 PR 中，不把旧版本的结论当成本次文档的批准。
 
-前 5 批没有发现需要修改的问题；文档批发现两处过期指引：已删除的编解码脚本名称，以及密钥轮换后重新生成设置页的要求。两处已分别改为 `audio_test.py` 和按第 8 节直接配置手机。修复后的完整文档复审返回 **“NO_ACTIONABLE_FINDINGS / Disposition: APPROVED”**，文件覆盖和结束标记均已核对。审查发现已全部处理，没有未解决的修改项。
+实现版本 `987f8d1` 提交前实际运行了 Google [Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli) **1.5.10**，模型 ID 为 **`gemini-4-argon-medium`**。2026-11-17 分为 6 个全新上下文审查，每批低于 80 KB，覆盖全部 19 个拟发布文件及 6 个官方 SDK 参考文件。每批正常返回，文件末行、正文摘要和独立结束标记均已核对；另一轮独立检查也逐行核对了输入覆盖。
+
+该实现版本的最终冻结审查返回 **`READY_FOR_COMMIT_NO_ACTIONABLE_FINDINGS`**。前 5 批没有发现需要修改的问题；文档批发现两处过期指引：已删除的编解码脚本名称，以及密钥轮换后重新生成设置页的要求。两处已分别改为 `audio_test.py` 和按第 8 节直接配置手机。修复后的完整文档复审返回 **“NO_ACTIONABLE_FINDINGS / Disposition: APPROVED”**，文件覆盖和结束标记均已核对。审查发现已全部处理，没有未解决的修改项。
 
 首轮长输入审查因模型明确报告尾部截断而作废，没有将其“无发现”结论算作完整通过。分批材料来自 322,830 字节的脱敏快照，SHA-256 为 `f33d1786056a05b0b70ad91e0a40f2a930b1373fd82e6c8f11cda88867c5b0bd`；文档修复及本段审查记录随后补入。
 
@@ -560,3 +607,32 @@ gcloud iam service-accounts delete \
 ```
 
 不要为清理本方案关闭共享项目中其他服务所需的 API，或删除其他应用的日志与账单记录。本方案的源码可以公开分享；真实凭证、私有生成页、录音、聊天记录和个人部署身份始终留在仓库之外。
+
+## 14. 许可证
+
+Muse Gadgets 使用 [Apache License 2.0](LICENSE)。下列第三方文件保留各自的上游许可证；此 fork 保留原有文件和许可证说明。此表对应[原版 SDK 的许可证清单](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/README.md#license)。
+
+| 路径 | 上游来源 | 许可证 |
+| --- | --- | --- |
+| [`esp32/components/minimp3/include/minimp3.h`](esp32/components/minimp3) | [lieff/minimp3](https://github.com/lieff/minimp3) | CC0-1.0，见 [`LICENSE`](esp32/components/minimp3/LICENSE) |
+| [`ostb_echoear_display_init.h`](esp32/components/muse/boards/ostb_echoear_display_init.h) | [78/xiaozhi-esp32 ESP-VoCat 面板初始化序列](https://github.com/78/xiaozhi-esp32/blob/0d576d3d4c049c6f55eaf879725dc23e516511b4/main/boards/espressif/esp-vocat/esp_vocat.cc) | MIT，文件头保留声明 |
+| [`board_atk_dnesp32s3_box2.c`](esp32/components/muse/boards/board_atk_dnesp32s3_box2.c) 中的 ST7789 调整表 | [78/xiaozhi-esp32 ATK-DNESP32S3-BOX2 板](https://github.com/78/xiaozhi-esp32/blob/a78ca19d5bc9a12ee0853b9f509530276d36aa03/main/boards/alientek/atk-dnesp32s3-box2-wifi/atk_dnesp32s3_box2.cc) | MIT，见 [`xiaozhi-esp32.txt`](esp32/devices/licenses/xiaozhi-esp32.txt) |
+| [`board_seeed_xiao_s3_147.c`](esp32/components/muse/boards/board_seeed_xiao_s3_147.c) 中的 JD9853A 初始化序列 | [Seeed-Studio/Seeed_GFX2](https://github.com/Seeed-Studio/Seeed_GFX2) | MIT，见 [`Seeed_GFX2.txt`](esp32/devices/licenses/Seeed_GFX2.txt) |
+| [`viewe_smartring_display_init.h`](esp32/components/muse/boards/viewe_smartring_display_init.h) | [VIEWESMART/smartring_plus](https://github.com/VIEWESMART/smartring_plus) 面板初始化序列 | Apache-2.0，文件头保留 VIEWE 版权声明 |
+| [`waveshare_s3_185b_init.h`](esp32/components/muse/boards/waveshare_s3_185b_init.h) | [waveshareteam/ESP32-S3-Touch-LCD-1.85B](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.85B/tree/7232af4c501c64d34215b73e1d8319376dfd9c19/examples/esp-idf/05_bq27220/components/esp32_s3_touch_lcd_1_85B) 面板序列 | Apache-2.0，文件头保留声明 |
+| [`esp32/main/pixel_font.c`](esp32/main/pixel_font.c) | Adafruit GFX `glcdfont.c` | BSD-2-Clause，文件头保留声明 |
+| [`esp32/components/muse/fonts/`](esp32/components/muse/fonts) | GNU Unifont 16.0.04、Noto Sans SC、Montserrat Medium，经 LVGL 整理；见目录 README | SIL Open Font License 1.1；Unifont 另有 GPL-2.0+ 及字体嵌入例外 |
+| [`montserrat.ttf`](esp32/components/muse/eink/fonts) | Montserrat Medium，经 LVGL v9.5.0 | SIL Open Font License 1.1 |
+| [`unscii.ttf`](esp32/components/muse/eink/fonts) | unscii-8 | 公有领域 |
+| [`symbols.ttf`](esp32/components/muse/eink/fonts) | Font Awesome 5 Free，经 LVGL v9.5.0 | SIL Open Font License 1.1；图标为 CC BY 4.0 |
+| [`esp32/main/epd_ssd1677.c`](esp32/main/epd_ssd1677.c) | Seeed-reTerminal-E10xx-Firmware 的 SSD1677 刷新序列 | MIT，文件头保留声明 |
+| [`esp32/components/tinyh264/src`](esp32/components/tinyh264) | Android Open Source Project 的 H.264 解码器，经 [udevbe/tinyh264](https://github.com/udevbe/tinyh264) | Apache-2.0，保留 AOSP 版权，见 [`LICENSE`](esp32/components/tinyh264/LICENSE) |
+| [`esp32/components/libvpx_vp8/src`](esp32/components/libvpx_vp8) | [libvpx](https://chromium.googlesource.com/webm/libvpx) v1.16.0 的 VP8 解码器裁剪版 | BSD-3-Clause，保留 WebM Project 版权；见 [`LICENSE`](esp32/components/libvpx_vp8/LICENSE) 及 Google 专利授权 [`PATENTS`](esp32/components/libvpx_vp8/PATENTS) |
+
+构建时下载的依赖各自使用其上游许可证：包括 ESP-IDF 组件（`esp32/managed_components/`），以及模拟器使用的 LVGL 和 SDL，见 [`esp32/simulator/THIRD_PARTY.md`](esp32/simulator/THIRD_PARTY.md)。
+
+Apache 许可证不适用于 [Jollybot 头像](esp32/avatar)。
+
+Muse Gadgets Test 的示例视频不在本仓库中；播放时应用会下载 Blender Foundation 开放影片中的短片段（CC BY 3.0），并展示署名。
+
+Muse Gadgets Test 可以在手机端使用 x264（GPL-2.0），本仓库不包含其代码。将其构建进 APK 或 iPhone App 时，产物使用 GPL；详见 [Android](android/musegadgetstest/README.md) 和 [iPhone](ios/musegadgetstest/README.md) 说明。

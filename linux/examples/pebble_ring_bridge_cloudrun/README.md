@@ -7,10 +7,12 @@ Recording-only and text-only payloads also work; no wake word, content filter or
 routing is applied. A small shared parser is extracted inside the original
 example; its local text behavior and the SDK protocols remain unchanged.
 
-[**G3.md**](../../../G3.md) contains the complete reproduction and operations
-guide: initial pairing, staged Google deployment, phone settings, verification,
-privacy, costs and recovery. Pairing needs Bluetooth once; normal cloud use
-does not require an always-on Mac or a Bluetooth-equipped cloud host.
+The complete setup and operations guide is available in
+[English](../../../README.md) and [Simplified Chinese](../../../README.zh-CN.md),
+including prerequisites, Google Cloud signup, initial pairing, deployment,
+phone settings, verification, privacy, costs and recovery. The Mac/Linux setup
+host needs Bluetooth for initial Muse pairing; daily ring-to-phone transfers
+still use Bluetooth. Cloud Run needs no Bluetooth or always-on Mac.
 
 | Runtime file | Responsibility |
 | --- | --- |

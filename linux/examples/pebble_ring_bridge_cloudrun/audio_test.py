@@ -1,15 +1,16 @@
 """Synthetic tests for the bounded media decoder; no credentials or network."""
 import io
+import math
 from pathlib import Path
+import shutil
 import stat
+import struct
 import subprocess
-import sys
 from types import SimpleNamespace
 import wave
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
 import audio
 
 
@@ -45,7 +46,8 @@ def assert_canonical_wav(result, pcm):
     (synthetic_wav(), 'audio/x-wav', 'wav'),
     (synthetic_wav(), 'audio/wave', 'wav'),
 ])
-def test_conversion_has_private_seekable_input_and_bounded_local_decoder(monkeypatch, raw, mime, demuxer):
+def test_conversion_has_private_seekable_input_and_bounded_local_decoder(
+        monkeypatch, raw, mime, demuxer):
     pcm = b'\x01\x02' * 160
     paths = []
 
@@ -94,11 +96,14 @@ def test_conversion_has_private_seekable_input_and_bounded_local_decoder(monkeyp
     (M4A_HEADER, 'audio/wav', 'unsupported_audio_format'),
     (synthetic_wav(), 'audio/mp4', 'unsupported_audio_format'),
     (M4A_HEADER, 'text/plain', 'unsupported_audio_format'),
-    (b'#EXTM3U\nhttps://example.invalid/audio', 'audio/mp4', 'unsupported_audio_format'),
+    (b'#EXTM3U\nhttps://example.invalid/audio', 'audio/mp4',
+     'unsupported_audio_format'),
 ])
 def test_invalid_input_never_starts_decoder(monkeypatch, raw, mime, code):
+
     def unexpected(*args, **kwargs):
         pytest.fail('Decoder must not start for invalid input')
+
     monkeypatch.setattr(audio.subprocess, 'run', unexpected)
     with pytest.raises(audio.AudioError) as failure:
         audio.normalize_audio(raw, mime)
@@ -106,22 +111,30 @@ def test_invalid_input_never_starts_decoder(monkeypatch, raw, mime, code):
 
 
 def test_compressed_input_size_is_checked_before_decoding(monkeypatch):
-    monkeypatch.setattr(audio.subprocess, 'run', lambda *a, **k: pytest.fail('Unexpected decoder'))
+    monkeypatch.setattr(audio.subprocess, 'run',
+                        lambda *a, **k: pytest.fail('Unexpected decoder'))
     raw = M4A_HEADER + b'\0' * (audio.MAX_AUDIO_BYTES - len(M4A_HEADER) + 1)
     with pytest.raises(audio.AudioError, match='^audio_too_large$'):
         audio.normalize_audio(raw, 'audio/mp4')
 
 
 @pytest.mark.parametrize(('exception', 'code'), [
-    (subprocess.TimeoutExpired(['synthetic-decoder'], 15, stderr=b'private synthetic metadata'), 'audio_decode_timeout'),
-    (FileNotFoundError('synthetic missing decoder'), 'audio_decoder_unavailable'),
-    (PermissionError('synthetic permission failure'), 'audio_decoder_unavailable'),
+    (subprocess.TimeoutExpired(
+        ['synthetic-decoder'], 15,
+        stderr=b'private synthetic metadata'), 'audio_decode_timeout'),
+    (FileNotFoundError('synthetic missing decoder'),
+     'audio_decoder_unavailable'),
+    (PermissionError('synthetic permission failure'),
+     'audio_decoder_unavailable'),
 ])
-def test_decoder_failures_have_fixed_codes_and_remove_temporary_input(monkeypatch, exception, code):
+def test_decoder_failures_have_fixed_codes_and_remove_temporary_input(
+        monkeypatch, exception, code):
     paths = []
+
     def failure(argv, **kwargs):
         paths.append(Path(argv[argv.index('-i') + 1]))
         raise exception
+
     monkeypatch.setattr(audio.subprocess, 'run', failure)
     with pytest.raises(audio.AudioError) as error:
         audio.normalize_audio(M4A_HEADER, 'audio/mp4')
@@ -135,15 +148,114 @@ def test_decoder_failures_have_fixed_codes_and_remove_temporary_input(monkeypatc
     (0, b'\x00', 'invalid_decoded_audio'),
     (0, b'\x00' * (audio.MAX_PCM_BYTES + 2), 'audio_too_long'),
 ])
-def test_bad_or_overlong_decoded_audio_is_not_returned(monkeypatch, returncode, pcm, code):
-    monkeypatch.setattr(audio.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=returncode, stdout=pcm))
+def test_bad_or_overlong_decoded_audio_is_not_returned(monkeypatch, returncode,
+                                                       pcm, code):
+    monkeypatch.setattr(
+        audio.subprocess, 'run',
+        lambda *a, **k: SimpleNamespace(returncode=returncode, stdout=pcm))
     with pytest.raises(audio.AudioError) as error:
         audio.normalize_audio(M4A_HEADER, 'audio/mp4')
     assert str(error.value) == code
 
 
-@pytest.mark.parametrize('size', [2, audio.MAX_PCM_BYTES - 2, audio.MAX_PCM_BYTES])
+@pytest.mark.parametrize('size',
+                         [2, audio.MAX_PCM_BYTES - 2, audio.MAX_PCM_BYTES])
 def test_decoded_sample_limit_and_wav_header_are_exact(monkeypatch, size):
     pcm = b'\0' * size
-    monkeypatch.setattr(audio.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=pcm))
+    monkeypatch.setattr(
+        audio.subprocess, 'run',
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout=pcm))
     assert_canonical_wav(audio.normalize_audio(M4A_HEADER, 'audio/mp4'), pcm)
+
+
+def make_tone_wav(seconds, sample_rate=16000, channels=1, silence=False):
+    output = io.BytesIO()
+    pcm = bytearray()
+    for index in range(round(seconds * sample_rate)):
+        value = 0 if silence else round(
+            6000 * math.sin(2 * math.pi * 440 * index / sample_rate))
+        pcm.extend(struct.pack('<h', value) * channels)
+    with wave.open(output, 'wb') as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm)
+    return output.getvalue()
+
+
+def assert_decoded_wav(raw, minimum_frames=1, maximum_frames=960000):
+    with wave.open(io.BytesIO(raw), 'rb') as wav:
+        assert wav.getnchannels() == 1, 'Expected mono output'
+        assert wav.getsampwidth() == 2, 'Expected PCM16 output'
+        assert wav.getframerate() == 16000, 'Expected 16kHz output'
+        assert wav.getcomptype() == 'NONE', 'Expected uncompressed output'
+        frames = wav.getnframes()
+        assert minimum_frames <= frames <= maximum_frames
+        assert len(wav.readframes(
+            frames)) == frames * 2, 'WAV header does not match payload'
+    assert len(raw) <= 2 * 1024 * 1024, 'WAV exceeds SDK upload cap'
+
+
+def encode_m4a(source, target, audio_filter=None):
+    argv = [
+        'ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i',
+        str(source)
+    ]
+    if audio_filter:
+        argv += ['-af', audio_filter]
+    argv += ['-c:a', 'aac', '-b:a', '32000', '-f', 'ipod', str(target)]
+    subprocess.run(argv,
+                   stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL,
+                   check=True,
+                   timeout=15)
+    raw = target.read_bytes()
+    assert raw[4:8] == b'ftyp', 'Fixture is not M4A'
+    return raw
+
+
+requires_ffmpeg = pytest.mark.skipif(shutil.which('ffmpeg') is None,
+                                     reason='FFmpeg is not installed')
+
+
+@requires_ffmpeg
+def test_real_wav_conversion_resamples_stereo_audio():
+    raw = make_tone_wav(0.25, sample_rate=22050, channels=2)
+    assert_decoded_wav(audio.normalize_audio(raw, 'audio/wav'), 3900, 4100)
+
+
+@requires_ffmpeg
+def test_real_m4a_conversion_accepts_metadata_after_audio(tmp_path):
+    source = tmp_path / 'tone.wav'
+    source.write_bytes(make_tone_wav(0.25, sample_rate=22050, channels=2))
+    raw = encode_m4a(source, tmp_path / 'tone.m4a')
+    assert raw.find(b'moov') > raw.find(b'mdat') > 0
+    assert_decoded_wav(audio.normalize_audio(raw, 'audio/mp4'), 3000, 5500)
+
+
+@requires_ffmpeg
+@pytest.mark.parametrize('mime', ['audio/wav', 'audio/mp4'])
+def test_real_decoder_refuses_overlong_audio_instead_of_truncating(
+        tmp_path, mime):
+    raw = make_tone_wav(61.25, silence=True)
+    if mime == 'audio/mp4':
+        source = tmp_path / 'silence.wav'
+        source.write_bytes(raw)
+        raw = encode_m4a(source, tmp_path / 'long.m4a')
+    with pytest.raises(audio.AudioError, match='^audio_too_long$'):
+        audio.normalize_audio(raw, mime)
+
+
+@requires_ffmpeg
+def test_real_decoder_preserves_samples_after_timestamp_gap(tmp_path):
+    # A timestamp cutoff must not discard the second half of the command.
+    source = tmp_path / 'tone.wav'
+    source.write_bytes(make_tone_wav(1.0))
+    shifted = encode_m4a(
+        source,
+        tmp_path / 'timestamp-gap.m4a',
+        'asetpts=PTS+if(gte(N\\,8000)\\,75/TB\\,0)',
+    )
+    assert_decoded_wav(audio.normalize_audio(shifted, 'audio/mp4'), 14000,
+                       19000)

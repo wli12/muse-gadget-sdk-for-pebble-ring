@@ -15,7 +15,7 @@ SOURCE_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 PYTHON=${BRIDGE_PYTHON:-python3}
 
 if [[ ! $PROJECT_ID =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
-  echo 'Usage: deploy.sh plan|bootstrap|build|upload-pairing|upload-bundle|deploy-private|publish|status PROJECT_ID [PRIVATE_DIRECTORY]'
+  echo 'Usage: deploy.sh plan|bootstrap|build|upload-pairing|deploy-private|publish|status PROJECT_ID [PAIRING_DIRECTORY]'
   exit 2
 fi
 
@@ -43,10 +43,9 @@ No cloud command has run. No credentials have been read or uploaded.
 Stages:
   bootstrap       Enable APIs and create the named private resources and identities.
   build           Upload only allowlisted source files; build the image, without credentials.
-  upload-pairing  Upload the 3 local Muse pairing files and new webhook keys, only with explicit approval.
-  upload-bundle   Upload preassembled muse.json + webhook.json from a private directory, only with explicit approval.
+  upload-pairing  Upload the 3 local Muse pairing files and new webhook keys to the private state bucket.
   deploy-private  Create/update Cloud Run with IAM-required access; does not publish the webhook.
-  publish         Grant public invocation, only with separate explicit approval; signed requests remain required by the app.
+  publish         Grant public invocation; signed requests remain required by the app.
   status          Read deployment metadata only, without reading secret objects.
 EOF
 }
@@ -110,9 +109,15 @@ JSON
     BUILD_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/muse-ring-build.XXXXXX")
     trap 'rm -rf -- "$BUILD_CONTEXT"' EXIT
     # Never use the chat workspace or a pairing directory as a build context.
-    for file in app.py muse_sender.py audio.py codec_smoke_test.py requirements.txt Dockerfile; do
+    for file in app.py muse_sender.py audio.py audio_test.py requirements.txt Dockerfile; do
       [[ -f "$SOURCE_DIR/$file" ]] || { echo "Missing reviewed source file: $file"; exit 1; }
       cp -- "$SOURCE_DIR/$file" "$BUILD_CONTEXT/$file"
+    done
+    # Import the fork's shared example, including the small parser extension.
+    # The pinned SDK archive still supplies the unmodified SDK package.
+    for file in pebble_ring_bridge.py pebble_ring_bridge_test.py; do
+      [[ -f "$SOURCE_DIR/../$file" ]] || { echo "Missing shared example: $file"; exit 1; }
+      cp -- "$SOURCE_DIR/../$file" "$BUILD_CONTEXT/$file"
     done
     TAG=$(date -u +%Y%m%dT%H%M%SZ)
     IMAGE=$IMAGE_BASE:$TAG
@@ -131,63 +136,47 @@ EOF
     ;;
   upload-pairing)
     require_cli
-    if [[ ${APPROVED_CREDENTIAL_UPLOAD:-} != yes ]]; then
-      echo "Stopped: explicit approval is required to upload Muse device access/refresh tokens, identity, SDK token, and webhook keys to gs://$STATE_BUCKET."
-      echo 'After approval, set APPROVED_CREDENTIAL_UPLOAD=yes for this one invocation.'
-      exit 3
-    fi
     PAIRING_DIR=${3:-}
     [[ -n "$PAIRING_DIR" && -d "$PAIRING_DIR" ]] || { echo 'Pass the local pairing directory as the third argument.'; exit 2; }
     mkdir -p "$DEPLOY_DATA"
     BUNDLE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/muse-ring-pairing.XXXXXX")
     trap 'rm -rf -- "$BUNDLE_DIR"' EXIT
     "$PYTHON" - "$PAIRING_DIR" "$BUNDLE_DIR" "$DEPLOY_DATA" <<'PY'
-from pathlib import Path
-import json, os, secrets, sys
-source, dest, local = map(Path, sys.argv[1:])
-identity = json.loads((source/'identity.json').read_text())
-pairing = json.loads((source/'pairing.json').read_text())
-token = (source/'sdk_token').read_text().strip()
-if not token.startswith('mgst_') or not all(pairing.get(k) for k in ('access_token','refresh_token')):
-    raise SystemExit('Pairing files are missing expected credentials; nothing was uploaded.')
-(dest/'muse.json').write_text(json.dumps({'identity':identity,'pairing':pairing,'sdk_token':token}))
-keys = local/'webhook.json'
+import json
+import os
+import pathlib
+import secrets
+import sys
+
+source, dest, local = map(pathlib.Path, sys.argv[1:])
+identity = json.loads((source / 'identity.json').read_text())
+pairing = json.loads((source / 'pairing.json').read_text())
+token = (source / 'sdk_token').read_text().strip()
+if not token.startswith('mgst_') or not all(
+    pairing.get(key) for key in ('access_token', 'refresh_token')):
+    raise SystemExit('Invalid pairing files; nothing was uploaded.')
+(dest / 'muse.json').write_text(json.dumps({
+    'identity': identity,
+    'pairing': pairing,
+    'sdk_token': token,
+}))
+keys = local / 'webhook.json'
 if not keys.exists():
-    fd = os.open(keys,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,'w') as f:
-        json.dump({'bearer':secrets.token_urlsafe(32),'signing_secret':secrets.token_urlsafe(32)},f)
-(dest/'webhook.json').write_bytes(keys.read_bytes())
-for f in dest.iterdir(): f.chmod(0o600)
+    fd = os.open(keys, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        json.dump({
+            'bearer': secrets.token_urlsafe(32),
+            'signing_secret': secrets.token_urlsafe(32),
+        }, stream)
+(dest / 'webhook.json').write_bytes(keys.read_bytes())
+for file in dest.iterdir():
+    file.chmod(0o600)
 PY
     # Never overwrite live rotating credentials or webhook keys accidentally.
     gcloud_cmd storage cp "$BUNDLE_DIR/muse.json" "gs://$STATE_BUCKET/state/muse.json" --if-generation-match=0 --quiet
     gcloud_cmd storage cp "$BUNDLE_DIR/webhook.json" "gs://$STATE_BUCKET/state/webhook.json" --if-generation-match=0 --quiet
     echo 'Credential upload complete. Do not run the same gadget identity on the Mac while the cloud bridge is using it.'
     echo "Phone webhook keys are in the owner-only local file: $DEPLOY_DATA/webhook.json"
-    ;;
-  upload-bundle)
-    require_cli
-    if [[ ${APPROVED_CREDENTIAL_UPLOAD:-} != yes ]]; then
-      echo "Stopped: explicit approval is required to upload device credentials and webhook keys to gs://$STATE_BUCKET."
-      exit 3
-    fi
-    PRIVATE_DIR=${3:-}
-    [[ -n "$PRIVATE_DIR" && -d "$PRIVATE_DIR" ]] || { echo 'Pass the private directory holding muse.json and webhook.json.'; exit 2; }
-    "$PYTHON" - "$PRIVATE_DIR" <<'PY'
-from pathlib import Path
-import json, sys
-p=Path(sys.argv[1])
-m=json.loads((p/'muse.json').read_text())
-w=json.loads((p/'webhook.json').read_text())
-assert isinstance(m.get('identity'),dict)
-assert all(m.get('pairing',{}).get(k) for k in ('access_token','refresh_token'))
-assert isinstance(m.get('sdk_token'),str) and m['sdk_token'].startswith('mgst_')
-assert all(isinstance(w.get(k),str) and len(w[k])>=32 for k in ('bearer','signing_secret'))
-print('Private bundle structure checked; no credential values printed.')
-PY
-    gcloud_cmd storage cp "$PRIVATE_DIR/muse.json" "gs://$STATE_BUCKET/state/muse.json" --if-generation-match=0 --quiet
-    gcloud_cmd storage cp "$PRIVATE_DIR/webhook.json" "gs://$STATE_BUCKET/state/webhook.json" --if-generation-match=0 --quiet
-    echo 'Uploaded private state. Do not start the same gadget identity on the Mac while cloud requests use it.'
     ;;
   deploy-private)
     require_cli
@@ -200,15 +189,10 @@ PY
     ;;
   publish)
     require_cli
-    if [[ ${APPROVED_PUBLIC_WEBHOOK:-} != yes ]]; then
-      echo "Stopped: explicit approval is required to make the HTTPS endpoint for $PROJECT_ID/$SERVICE publicly reachable."
-      echo 'The application will still require the private bearer and a valid Pebble HMAC signature.'
-      exit 3
-    fi
     gcloud_cmd run services add-iam-policy-binding "$SERVICE" --region "$REGION" --member=allUsers --role=roles/run.invoker --quiet
     URL=$(gcloud_cmd run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
     echo "Webhook: $URL/index"
-    echo 'Phone settings: Authorization: Bearer <local bearer>; Sign requests: on; signing_secret; Recording (Muse processes the audio), or Transcription for text fallback.'
+    echo 'Phone settings: Authorization: Bearer <local bearer>; Sign requests: on; signing_secret; Both (Pebble transcription and recording in one Muse message).'
     ;;
   status)
     require_cli

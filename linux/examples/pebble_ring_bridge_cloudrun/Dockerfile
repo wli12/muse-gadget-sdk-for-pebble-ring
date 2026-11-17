@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 ARG MUSE_SDK_COMMIT=08f89ed329918c27d53b11192065ad6b2cb0e868
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080
 WORKDIR /app
@@ -13,8 +13,15 @@ RUN pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir --no-deps /tmp/muse-sdk/linux \
  && rm -rf /tmp/muse-sdk /tmp/sdk.tar.gz \
  && useradd --uid 10001 --create-home bridge
-COPY --chown=bridge:bridge audio.py codec_smoke_test.py ./
-RUN python codec_smoke_test.py && rm codec_smoke_test.py
+
+FROM base AS checks
+RUN pip install --no-cache-dir pytest==9.2.0
+COPY audio.py audio_test.py pebble_ring_bridge.py pebble_ring_bridge_test.py ./
+RUN python -m pytest -q audio_test.py pebble_ring_bridge_test.py
+
+FROM base
+# Use the exact shared parser and decoder sources that passed their tests.
+COPY --from=checks --chown=bridge:bridge /app/audio.py /app/pebble_ring_bridge.py ./
 COPY --chown=bridge:bridge app.py muse_sender.py ./
 USER bridge
 RUN python -c "from app import app; assert app.test_client().get('/health').status_code == 200"

@@ -36,6 +36,7 @@ musegadget socket's group.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import email.parser
 import email.policy
 import hmac
@@ -52,17 +53,35 @@ TEXT_FIELDS = ("transcription", "text", "transcript")
 SEND_TIMEOUT_S = 100
 
 
+def multipart_fields(
+    content_type: str, raw: bytes, *, strict: bool = False
+) -> Iterator[tuple[str | None, bytes | None, str]]:
+    """Yield field name, payload bytes and MIME type for each part.
+
+    Strict mode validates the Cloud webhook envelope. The default retains the
+    local example's legacy parsing, including empty malformed multipart forms.
+    """
+    if strict:
+        if not content_type.lower().startswith("multipart/form-data;"):
+            raise ValueError("multipart_required")
+        content_type.encode("ascii")
+    message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
+        b"Content-Type: " + content_type.encode("latin-1") + b"\r\n\r\n" + raw
+    )
+    if strict and not message.is_multipart():
+        raise ValueError("invalid_multipart")
+    for part in message.iter_parts():
+        yield (part.get_param("name", header="content-disposition"),
+               part.get_payload(decode=True), part.get_content_type())
+
+
 def parse_body(content_type: str, raw: bytes) -> dict:
     """Return the request's fields from a multipart form, JSON, or plain text."""
     if content_type.startswith("multipart/form-data"):
-        message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
-            b"Content-Type: " + content_type.encode("latin-1") + b"\r\n\r\n" + raw
-        )
         fields = {}
-        for part in message.iter_parts():
-            name = part.get_param("name", header="content-disposition")
+        for name, payload, _ in multipart_fields(content_type, raw):
             if name:
-                payload = part.get_payload(decode=True) or b""
+                payload = payload or b""
                 fields[name] = payload.decode("utf-8", errors="replace").strip()
         return fields
     if content_type.startswith("application/json"):

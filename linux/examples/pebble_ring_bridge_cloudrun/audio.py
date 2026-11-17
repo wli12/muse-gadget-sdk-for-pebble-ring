@@ -37,7 +37,8 @@ def normalize_audio(raw: bytes, content_type: str) -> bytes:
     mime = content_type.split(';', 1)[0].strip().lower()
     if mime in M4A_TYPES and len(raw) >= 12 and raw[4:8] == b'ftyp':
         demuxer, suffix = 'mov', '.m4a'
-    elif mime in WAV_TYPES and len(raw) >= 12 and raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
+    elif mime in WAV_TYPES and len(
+            raw) >= 12 and raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
         demuxer, suffix = 'wav', '.wav'
     else:
         raise AudioError('unsupported_audio_format')
@@ -46,20 +47,31 @@ def normalize_audio(raw: bytes, content_type: str) -> bytes:
         directory = Path(temporary)
         os.chmod(directory, 0o700)
         source = directory / ('recording' + suffix)
-        fd = os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as stream:
+        descriptor = os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                             0o600)
+        with os.fdopen(descriptor, 'wb') as stream:
             stream.write(raw)
-        argv = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
-                '-threads', '1', '-protocol_whitelist', 'file,pipe', '-f', demuxer]
+        argv = [
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-threads', '1', '-protocol_whitelist', 'file,pipe', '-f', demuxer
+        ]
         if demuxer == 'mov':
             argv += ['-enable_drefs', '0', '-use_absolute_path', '0']
-        argv += ['-i', str(source), '-map', '0:a:0', '-vn', '-sn', '-dn',
-                 '-ac', '1', '-ar', str(SAMPLE_RATE), '-c:a', 'pcm_s16le',
-                 '-threads', '1', '-filter_threads', '1',
-                 '-fs', str(DECODE_OUTPUT_LIMIT), '-f', 's16le', 'pipe:1']
+        argv += [
+            '-i',
+            str(source), '-map', '0:a:0', '-vn', '-sn', '-dn', '-ac', '1',
+            '-ar',
+            str(SAMPLE_RATE), '-c:a', 'pcm_s16le', '-threads', '1',
+            '-filter_threads', '1', '-fs',
+            str(DECODE_OUTPUT_LIMIT), '-f', 's16le', 'pipe:1'
+        ]
         try:
-            result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.DEVNULL, timeout=15, check=False)
+            result = subprocess.run(argv,
+                                    stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL,
+                                    timeout=15,
+                                    check=False)
         except subprocess.TimeoutExpired:
             raise AudioError('audio_decode_timeout') from None
         except OSError:
@@ -72,7 +84,7 @@ def normalize_audio(raw: bytes, content_type: str) -> bytes:
     if len(pcm) > MAX_PCM_BYTES:
         raise AudioError('audio_too_long')
     output = io.BytesIO()
-    with wave.open(output, 'wb') as wav:
+    with wave.Wave_write(output) as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(SAMPLE_RATE)

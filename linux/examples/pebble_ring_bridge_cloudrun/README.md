@@ -10,21 +10,25 @@ example; its local text behavior and the SDK protocols remain unchanged.
 The complete setup and operations guide is available in
 [English](../../../README.md) and [Simplified Chinese](../../../README.zh-CN.md),
 including prerequisites, Google Cloud signup, initial pairing, deployment,
-phone settings, verification, privacy, costs and recovery. The Mac/Linux setup
-host needs Bluetooth for initial Muse pairing; daily ring-to-phone transfers
-still use Bluetooth. Cloud Run needs no Bluetooth or always-on Mac.
+phone settings, verification, privacy, costs and recovery. A Linux host with BLE
+or a Mac is used once for initial Muse Bluetooth pairing and can then be turned
+off. Daily ring-to-phone transfers still use Bluetooth. Cloud Run needs no
+Bluetooth or always-on Mac.
 
 | Runtime file | Responsibility |
 | --- | --- |
 | `../pebble_ring_bridge.py` | Shared MIME parsing, transcription and token extraction. |
 | `app.py` | Authenticate webhooks; serialize credential access and deduplicate delivery. |
 | `muse_sender.py` | Preserve refreshed credentials and submit once using the official SDK. |
+| `muse_transport.py` | Restrict SDK connections to official Muse origins; reject redirects and environment proxies. |
 | `audio.py` | Convert bounded M4A/WAV input locally to PCM16 mono 16 kHz WAV. |
 
 `deploy.sh` builds from an explicit source allowlist. `mac_pairing.py` is an
 optional experimental adapter; `verify_webhook.py` performs signed connectivity
 checks and an explicitly selected test message. These tools are outside the
 runtime path. No credentials, generated configuration or recordings belong in Git.
+The [privacy section](../../../README.md#privacy-and-data-flow) lists all intended
+data recipients and the limits of these restrictions.
 
 Run tests from the repository root with Python 3.12:
 

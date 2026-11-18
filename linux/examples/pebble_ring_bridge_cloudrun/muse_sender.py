@@ -17,10 +17,13 @@ import tempfile
 import threading
 from typing import Callable
 
+import muse_transport
+
 # Silence SDK messages, which may contain account identifiers or API errors.
-_sdk_log = logging.getLogger('musegadget')
-_sdk_log.addHandler(logging.NullHandler())
-_sdk_log.propagate = False
+for _namespace in ('musegadget', 'websockets'):
+    _sdk_log = logging.getLogger(_namespace)
+    _sdk_log.addHandler(logging.NullHandler())
+    _sdk_log.propagate = False
 _STATE_LOCK = threading.Lock()
 SAFE_EXCEPTION_TYPES = frozenset({
     'TimeoutError',
@@ -174,6 +177,7 @@ def validate_bundle(bundle: dict) -> None:
             not isinstance(pairing.get(k), str) or not pairing[k]
             for k in ('access_token', 'refresh_token')):
         raise ValueError('pairing_required')
+    muse_transport.validate_pairing_destinations(pairing)
     if not isinstance(bundle.get('sdk_token'),
                       str) or not bundle['sdk_token'].startswith('mgst_'):
         raise ValueError('sdk_token_required')
@@ -277,6 +281,7 @@ def send_message(bundle: dict,
                     diagnostic.http_status = None
                     diagnostic.outcome = ''
                     retry_connection = False
+                    muse_transport.bind_session_transport(session)
                     transport = asyncio.create_task(session.run(stop))
                     registration = asyncio.create_task(
                         session.wait_registered(timeout=35))
@@ -300,6 +305,15 @@ def send_message(bundle: dict,
                             failure = (transport.exception()
                                        if transport.done() and
                                        not transport.cancelled() else None)
+                            if isinstance(failure, InvalidStatus):
+                                # The injected connector bypasses the SDK's
+                                # internal upgrade-error mapping. Preserve its
+                                # public outcome without adding an auth retry.
+                                status = safe_http_status(failure)
+                                if status == 401:
+                                    diagnostic.outcome = Outcome.AUTH_REJECTED.value
+                                elif status == 403:
+                                    diagnostic.outcome = Outcome.FORBIDDEN.value
                             retry_connection = (not attempted and
                                                 not before_send_entered and
                                                 connection_attempts < 3 and
@@ -356,7 +370,10 @@ def send_message(bundle: dict,
             await asyncio.wait_for(service.run(), deadline_seconds)
 
         try:
-            asyncio.run(run_once())
+            # SDK urllib workers can survive cancellation. Keep the policy
+            # until asyncio.run has also shut down its default executor.
+            with muse_transport.sdk_api_transport():
+                asyncio.run(run_once())
         except Exception as error:  # pylint: disable=broad-exception-caught
             # The caller receives status fields without SDK error text.
             diagnostic.exception(error)

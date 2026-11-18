@@ -22,20 +22,18 @@ Forward a Pebble Index 01 ring's transcription and recording to your main chat i
 
 This guide covers setup, file provenance, deployment, verification, privacy, costs, recovery, and teardown. Deployment projects, runtime accounts, and webhook addresses use placeholders. Public source links use real GitHub addresses. The repository contains no real device credentials, webhook secrets, personal chats, or recordings. For the original SDK overview, see the [upstream README at the pinned revision](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/README.md).
 
-**Current status (2026-11-17):** Cloud Run health, signature, and authentication checks pass, but the Muse Link WebSocket upgrade currently returns HTTP 502 before message submission. The latest real-message delivery check is blocked. Successful physical-ring checks on 2026-11-16 are historical, not proof of current availability.
-
 ## 0. What do you need?
 
 | Requirement | What to prepare |
 | --- | --- |
 | Ring | A [Pebble Index 01](https://repebble.com/products/pebble-index-01). Pair it with the phone using the [official getting-started guide](https://help.repebble.com/en/articles/15434751-index-01-getting-started-guide). A Pebble watch is not required. |
-| Phone | **Either iPhone or Android works; Google Pixel is not required.** The complete iPhone path currently requires **iOS 18 or later**, as required by Muse. Android phones, including compatible Pixel models, must be able to install both apps below. Check both app-store listings for Android compatibility; Pebble's own Android 8.0 baseline is not the minimum for the entire setup. |
+| Phone | **Either iPhone or Android works.** The complete iPhone path currently requires **iOS 18 or later**, as required by Muse. Android phones must be able to install both apps below; check both app-store listings. Pebble's Android 8.0 baseline is not the minimum for the entire setup. |
 | Apps, Muse account, and token | Install [Pebble](https://repebble.com/app) and Muse from Meta ([iPhone](https://apps.apple.com/us/app/muse-from-meta/id6760173601), [Android](https://play.google.com/store/apps/details?id=com.facebook.aura)). Sign in to your Muse account, obtain a [Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens), and review the [SDK terms](https://gadgets.muse.ai/sdk-terms). Pebble should already receive and transcribe ring recordings and expose signed-webhook settings. |
-| Google Cloud | A Google account, a usable Cloud Billing account, and a Google Cloud project linked to that billing account. Signup steps follow below. Existing eligible accounts/projects can be reused; a dedicated project is easier to administer and clean up. |
-| Setup computer | Python 3.12, Git, and the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install). Initial Muse device pairing needs either a local Linux BLE host or a Mac running this project's experimental adapter; choose one pairing path. Later deployment can use the local computer or [Cloud Shell](https://docs.cloud.google.com/shell/docs/launching-cloud-shell). |
+| Cloud host / managed runtime | You need a cloud environment to receive HTTPS webhooks and run the bridge. This guide uses **Google Cloud Run**, a managed container service, rather than a separately rented always-on VM. For a few short personal commands, this request-based, scale-to-zero setup is expected to cost very little and may stay within free allowances. Prepare a Google account and a project linked to a valid billing account. Check your [actual costs in Billing Reports](https://console.cloud.google.com/billing/reports); signup and cost-check steps follow below. |
+| Bluetooth pairing computer (one-time) | **Used only once for initial Bluetooth pairing.** Choose a local **Linux host with BLE** or a **Mac** running this project's experimental adapter. It pairs the Muse phone app with the gadget identity. After completing pairing, uploading its state, and finishing cloud setup, you can turn this computer off; normal ring use does not depend on it. Pairing setup is covered in Sections 5 and 6. |
 | Normal connectivity | The ring transfers recordings to the phone over Bluetooth; the phone needs internet access to send webhooks to Google Cloud. The setup computer does not need to remain on, and Cloud Run needs no Bluetooth. |
 
-“Bluetooth is needed only once” refers to **setup between the Muse phone app and the Mac/Linux device identity**. Normal ring-to-phone Bluetooth remains necessary. Apple Watch is optional, not a prerequisite; reply synchronization and notifications need separate verification.
+The one-time computer is for **Muse app ↔ gadget identity Bluetooth pairing**. Daily ring-to-phone transfers still use Bluetooth, and the phone needs internet access. Deployment tools (Git, Python 3.12, and `gcloud`) can run in Cloud Shell or on a separate computer; they do not require the pairing computer to stay on. Apple Watch is optional, and reply synchronization/notifications need separate verification.
 
 ### Sign up for Google Cloud and prepare a project
 
@@ -45,6 +43,33 @@ This guide covers setup, file provenance, deployment, verification, privacy, cos
 4. In the project's **Billing** page, confirm that a valid billing account is linked. Otherwise follow [Link a billing account](https://docs.cloud.google.com/billing/docs/how-to/modify-project). A project and a billing account are distinct objects.
 5. Launch **Cloud Shell** from the console's top-right corner, where `gcloud` is preinstalled, or install Google Cloud CLI locally. Section 4 runs `gcloud auth login` and selects the project. BLE pairing still happens on local Mac/Linux hardware.
 6. Optionally configure [budget alerts](https://docs.cloud.google.com/billing/docs/how-to/budgets). Alert-only budgets do not stop spending automatically. Small workloads may fit free allowances, but there is no permanent zero-bill guarantee. A trial does not upgrade itself to a paid account; resources can stop when it expires, and the account owner decides whether to upgrade. Section 3 covers costs and resource limits.
+
+### Check your actual costs
+
+1. Open [Google Cloud Billing Reports](https://console.cloud.google.com/billing/reports) and select the billing account linked to your project.
+2. Set the date range to this month or deployment date through today. In **Projects**, select your `PROJECT_ID`; use **Group by → Service** to inspect Cloud Run, Cloud Storage, Cloud Build, and Artifact Registry separately.
+3. Review usage cost, **Savings** (credits/discounts), and the after-credit **Subtotal**. Compare pre-credit cost as well, so trial credit is not mistaken for zero resource usage. For finalized invoice charges, use the billing-period view or [Cost table](https://docs.cloud.google.com/billing/docs/how-to/cost-table).
+4. Billing data arrives with a delay: a fresh zero is not a final zero bill. See the [official Reports guide](https://docs.cloud.google.com/billing/docs/how-to/reports).
+
+Cloud Run free allowances are shared across projects on the billing account. Storage, builds, image storage, and network usage have separate prices/allowances. This is a low-cost option for light use, not a guaranteed zero-cost service; Section 3 links the pricing pages.
+
+## Privacy and data flow
+
+Before uploading credentials or recordings, understand who processes them:
+
+| Party / location | Data and access |
+| --- | --- |
+| Your phone, Pebble, and its selected services | Pebble receives the ring recording and generates the transcription. Local/cloud ASR, fallback, backup, and integrations depend on its settings. Cloud processing can add providers such as Wispr Flow or OpenRouter, according to the [official setup/privacy guide](https://help.repebble.com/en/articles/15434751-index-01-getting-started-guide) and [Pebble privacy policy](https://repebble.com/privacy). **Webhook only does not force speech recognition to stay local.** |
+| Your Google Cloud project | Cloud Run processes the incoming text/audio. Private Cloud Storage retains device credentials, webhook keys, leases, content digests, status, and limited diagnostics, **not note text or recordings**. Application logs exclude note content; Google still records request metadata such as IP, URL, status, and latency. Authorized project/organization administrators can access the corresponding objects/logs and alter the deployment. Google hosts the service and has controlled operational/security/legal access; this is not a user-exclusive confidential environment. See [Storage IAM](https://docs.cloud.google.com/storage/docs/access-control/iam), [Cloud Run logging](https://docs.cloud.google.com/run/docs/logging), and [Google access controls](https://docs.cloud.google.com/docs/security/privileged-access-management). |
+| Meta Muse | Muse receives the transcription and/or normalized recording, device registration information, and required authentication data. Meta's [published data policy](https://muse.ai/blog/security-and-safety-for-ai-agents-our-approach-with-muse) describes storage and operational access, and default training use of sanitized conversations/tool trajectories with a settings opt-out. Check that preference in Muse; the bridge does not set it. |
+| Tools and websites used by Muse | If a task uses a connected app or website, Muse can send the task's relevant data there. Those recipients depend on your instructions, integrations, approvals, and their policies; the bridge does not govern Muse's downstream tools. |
+| Your one-time pairing computer | It stores the device identity, access/refresh credentials, and SDK token in owner-only files. People with access to that computer/account may read them. Daily notes do not transit this computer once the cloud bridge is in use. |
+
+**What the Cloud Run forwarding runtime enforces:** its Muse API traffic is limited to `https://api.muse.ai` and its Link traffic to `wss://hatch.metaaivm.com` (standard HTTPS/WSS port 443); API and WebSocket redirects are rejected, and these connections disable environment proxies. Storage uses the fixed Google Storage API endpoint and rejects emulator/endpoint overrides. FFmpeg converts audio locally without network protocols. No analytics, advertising, extra speech-recognition/model API, or author-operated upload endpoint is added. These connection restrictions apply to the cloud runtime, not the separate one-time Mac/Linux pairing tools.
+
+During normal operation the bridge does not send recordings, transcripts, or credentials to the project author, GitHub, Codex/OpenAI, or code-review models. GitHub/package services are used to obtain source/dependencies, not receive notes. Raw audio is processed in memory and private temporary files and then removed; content digests are **not** a guarantee of anonymity.
+
+For fewer upstream content recipients, review Pebble's speech-recognition, cloud-fallback, backup, and integration settings; local ASR and local agent settings are [independent choices](https://developer.repebble.com/index-01/). Review Muse's training/privacy and tool permissions too. These code restrictions apply to the reviewed bridge and documented deployment, not to every phone app, provider backend, malicious administrator, or replaced dependency. Detailed storage/permission controls follow in Section 3.
 
 ## 1. Behavior and verification scope
 
@@ -76,7 +101,7 @@ Physical-ring acceptance was recorded on **2026-11-16**. Source checks and the h
 
 | Check | Result and meaning |
 | --- | --- |
-| Offline tests | 117 collected, including unchanged official-example compatibility tests. On Mac, 112 passed and five real FFmpeg cases skipped because no decoder was installed locally; those cases ran in the Linux image build. Coverage includes signatures, text without a wake word, Both, deduplication, token rotation/revocation, and Mac BLE batches. |
+| Historical offline tests, 2026-11-17 | 117 collected, including unchanged official-example compatibility tests. On Mac, 112 passed and five real FFmpeg cases skipped because no decoder was installed locally; those cases ran in the Linux image build. Coverage includes signatures, text without a wake word, Both, deduplication, token rotation/revocation, and Mac BLE batches. |
 | Historical controlled cloud message, 2026-11-16 | A plain Chinese instruction without a “Muse” prefix received SDK submission acknowledgement, HTTP 200. |
 | Historical replay of the same delivery ID | HTTP 200 and `duplicate: true`; no second chat submission. |
 | SDK token refresh and private-state persistence | Verified in the cloud flow; refreshed state becomes the basis of later requests. |
@@ -96,7 +121,7 @@ SDK `acknowledged` means that message submission was acknowledged. It does not m
 
 | Component | Location | Purpose |
 | --- | --- | --- |
-| Shared `pebble_ring_bridge.py`, `app.py`, `muse_sender.py`, and `audio.py` | Your Google Cloud Run project, `us-central1` | Receive webhooks and submit to Muse; idle instances can scale to zero. |
+| Shared `pebble_ring_bridge.py`, `app.py`, `muse_sender.py`, `muse_transport.py`, and `audio.py` | Your Google Cloud Run project, `us-central1` | Receive webhooks and submit to Muse; idle instances can scale to zero. |
 | Pairing state, webhook secrets, lease, and delivery ledger | Private Cloud Storage in the same project | Retain device identity and deduplication state, without recording or transcript bodies. |
 | `mac_pairing.py` | Your Bluetooth-equipped Mac | Run only for initial pairing, then exit. |
 | `deploy.sh`, `verify_webhook.py`, and tests | Your Mac, Cloud Shell, or build environment | Deployment and verification, not a permanent relay process. |
@@ -127,10 +152,11 @@ Cloud Run's `app.py` **imports the original example module directly**, reusing m
 | --- | --- | --- |
 | `app.py` | HTTP ingress, signatures, multipart, private state, cross-instance lease, and deduplication. | `app_test.py` |
 | `muse_sender.py` | Run the official SDK within a request, preserve rotated tokens, and submit to the Muse main chat. | `muse_sender_test.py` |
+| `muse_transport.py` | Restrict SDK API/Link destinations and reject redirects/proxies without duplicating its protocols. | `muse_transport_test.py` |
 | `audio.py` | Convert M4A/WAV locally to WAV with size and duration bounds. | `audio_test.py`, with mocked boundaries and real FFmpeg cases. |
 | `verify_webhook.py` | Administrator-run connectivity check and an explicitly selected benign text test. | `verify_webhook_test.py` |
 | `mac_pairing.py` | Optional one-time CoreBluetooth adapter using the official pairing flow. | `mac_pairing_test.py` |
-| `Dockerfile`, `requirements.txt` | Cloud image and direct Python dependencies; final image excludes test tools. | Build-time audio checks and non-root health check. |
+| `Dockerfile`, `requirements.txt` | Cloud image and direct Python dependencies; final image excludes test tools. | Build-time audio, shared-parser, and transport-policy tests; non-root health check. |
 | `deploy.sh` | Explicit stages for resources, build, initial pairing upload, deployment, and publication. | `bash -n`, read-only `plan`, and actual build/deployment checks. |
 | `requirements-macos.txt` | PyObjC dependencies for Mac pairing only; excluded from the cloud image. | Mac-tool checks. |
 | Cloud example `README.md`, `.gitignore` | Concise local entry and exclusion of private files. | Documentation links and publication-content checks. |
@@ -150,9 +176,12 @@ Paths in the table are relative to `linux/examples/pebble_ring_bridge_cloudrun/`
 | State | Managed by the permanent local SDK service. | Private GCS holds rotated state, a CAS lease, and a delivery ledger. |
 | Duplicates and uncertain sends | No durable delivery ledger. | Deduplicate the same ID; do not automatically resend after an uncertain attempt. |
 | Host-command access | Depends on the installed generic SDK service. | No shell, file-access, or other host commands are registered. |
+| Network destinations | SDK permits configurable endpoints and redirects. | Fixed official Muse origins, no redirects/environment proxies; fixed Google Storage endpoint. |
 | Deployment and reproduction | One local listener example. | Container, least-privilege deployment, matching module tests, and this guide. |
 
 Strict shared MIME checks are enabled only by Cloud Run; the local entry retains compatible defaults. This bridge adds no speech-recognition engine, content classification, wake-word filtering, or Watch-specific service. Meta controls recognition of recordings and Watch presentation.
+
+`muse_transport.py` wraps network connection creation only. The pinned SDK Service does not expose its LinkSession constructor callback, so the adapter binds that existing callback through one private field; tests cover the exact SDK pin and the real connection path. SDK API calls use a scoped module binding, not a global `urllib` replacement. The binding remains active until background workers finish, including cancellation. SDK sources and wire protocols stay unchanged.
 
 The runtime pins official SDK commit:
 
@@ -176,7 +205,7 @@ Permissions and isolation:
 - The runtime account receives `roles/storage.objectUser` only on the dedicated state bucket. No service-account JSON private key is created or downloaded.
 - The builder reads only the build bucket, writes to its dedicated image repository, and writes logs. The script grants it no state-bucket access.
 - Project administrators and inherited organization permissions may still allow access; a dedicated service account does not constrain project owners.
-- The build context contains only cloud modules, audio tests, the shared example and its tests, dependency manifest, and Dockerfile. Pairing files, secrets, and private setup pages are excluded.
+- The build context contains only cloud modules, audio/transport-policy tests, the shared example and its tests, dependency manifest, and Dockerfile. Pairing files, secrets, and private setup pages are excluded.
 - The relay advertises no shell, file-access, or other host commands to Muse. The standard Linux installer used for initial pairing does install a generic command service, which is why the instructions use a separate account and stop that service before migration.
 
 Cloud Run uses **us-central1, 1 vCPU, 1 GiB, request-based CPU, min 0, max 1, concurrency 1, and a 120-second request timeout**. Both the service and revision have instance limits; cross-revision device serialization still relies on the GCS lease. Idle capacity can scale to zero.

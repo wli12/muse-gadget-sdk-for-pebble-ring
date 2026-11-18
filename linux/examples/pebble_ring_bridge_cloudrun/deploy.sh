@@ -109,7 +109,7 @@ JSON
     BUILD_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/muse-ring-build.XXXXXX")
     trap 'rm -rf -- "$BUILD_CONTEXT"' EXIT
     # Never use the chat workspace or a pairing directory as a build context.
-    for file in app.py muse_sender.py audio.py audio_test.py requirements.txt Dockerfile; do
+    for file in app.py muse_sender.py muse_transport.py muse_transport_test.py audio.py audio_test.py requirements.txt Dockerfile; do
       [[ -f "$SOURCE_DIR/$file" ]] || { echo "Missing reviewed source file: $file"; exit 1; }
       cp -- "$SOURCE_DIR/$file" "$BUILD_CONTEXT/$file"
     done

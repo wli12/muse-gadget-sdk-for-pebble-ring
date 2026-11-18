@@ -54,7 +54,13 @@ class GCSStore:
     """Read and update private JSON state using GCS generation preconditions."""
 
     def __init__(self, bucket_name: str) -> None:
-        self.bucket = storage.Client().bucket(bucket_name)
+        if any(
+                os.environ.get(name)
+                for name in ('STORAGE_EMULATOR_HOST', 'API_ENDPOINT_OVERRIDE')):
+            raise RuntimeError('storage_endpoint_override_not_allowed')
+        self.bucket = storage.Client(client_options={
+            'api_endpoint': 'https://storage.googleapis.com'
+        }).bucket(bucket_name)
 
     def read(self, name: str) -> tuple[dict | None, int]:
         """Return the JSON object and generation, or (None, 0) if absent."""

@@ -17,6 +17,7 @@ def sdk(monkeypatch):
 
         def __init__(self):
             self.registered = asyncio.Event()
+            self._connect = None
 
         async def wait_registered(self, timeout=35):
             await asyncio.wait_for(self.registered.wait(), timeout)
@@ -266,6 +267,7 @@ def reconnecting_sdk(monkeypatch):
     class FakeSession:
         registered_at = None
         _registration_error = None
+        _connect = None
 
         def __init__(self, **kwargs):
             self.registered = asyncio.Event()
@@ -332,13 +334,32 @@ def test_transient_upgrade_stops_after_three_total_attempts(reconnecting_sdk):
     assert not calls and result.http_status == 502
 
 
-def test_nontransient_upgrade_403_is_not_retried(reconnecting_sdk):
+@pytest.mark.parametrize('status,outcome', [(401, 'auth_rejected'),
+                                            (403, 'forbidden')])
+def test_nontransient_upgrade_auth_rejection_is_not_retried(
+        reconnecting_sdk, status, outcome):
     statuses, calls, connections, delays, _ = reconnecting_sdk
-    statuses[:] = [403]
+    statuses[:] = [status]
     result = send_message(copy.deepcopy(BUNDLE), 'must not send',
                           lambda x: None, lambda: pytest.fail('must not arm'))
     assert not result.attempted
     assert len(connections) == 1 and not delays and not calls
+    assert result.outcome == outcome
+
+
+@pytest.mark.parametrize('field,value', [
+    ('api_url_v2', 'https://collector.invalid'),
+    ('noise_host', 'collector.invalid'),
+])
+def test_unapproved_destination_is_rejected_before_sdk(sdk, field, value):
+    _, calls = sdk
+    bundle = copy.deepcopy(BUNDLE)
+    bundle['pairing'][field] = value
+    with pytest.raises(ValueError, match='invalid_muse_destination'):
+        send_message(bundle, 'synthetic',
+                     lambda _: pytest.fail('must not persist'),
+                     lambda: pytest.fail('must not arm'))
+    assert not calls
 
 
 def test_postattempt_http_503_is_never_retried(reconnecting_sdk):
@@ -416,3 +437,119 @@ def test_closed_transport_wins_over_simultaneous_registration(
                           lambda: pytest.fail('closed transport must not arm'))
     assert not result.attempted and not result.acknowledged
     assert len(connections) == 1 and not calls and not delays
+
+
+def test_cancelled_sdk_worker_stays_guarded_until_executor_shutdown(
+        monkeypatch, tmp_path):
+    """Keep a cancelled SDK fetch guarded until its worker thread exits."""
+    from email.message import Message
+    import io
+    import os
+    import socket
+    import threading
+    import urllib.request
+    from urllib.response import addinfourl
+
+    from musegadget import muse_api, service, tls
+    import muse_transport
+
+    def no_network(*_args, **_kwargs):
+        raise AssertionError('External network is forbidden in this test')
+
+    monkeypatch.setattr(socket.socket, 'connect', no_network)
+    monkeypatch.setattr(socket, 'getaddrinfo', no_network)
+    original_namespace = muse_api.urllib
+    original_urlopen = urllib.request.urlopen
+    original_request = urllib.request.Request
+    original_wait_for = asyncio.wait_for
+    original_shutdown = asyncio.BaseEventLoop.shutdown_default_executor
+    state_before = str(tmp_path / 'previous-sdk-state')
+    monkeypatch.setenv('MUSEGADGET_STATE_DIR', state_before)
+    monkeypatch.setenv('MUSEGADGET_SDK_TOKEN', 'synthetic-previous-token')
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+    worker_started = asyncio.Event()
+    loop_holder = []
+    opened, worker_errors, worker_results = [], [], []
+    guarded_after_cancel = []
+    cancelled = []
+
+    def paused_request(*args, **kwargs):
+        request = original_request(*args, **kwargs)
+        loop_holder[0].call_soon_threadsafe(worker_started.set)
+        if not release_worker.wait(timeout=5):
+            raise AssertionError('Executor shutdown never released the worker')
+        guarded = (muse_api.urllib is not original_namespace and
+                   muse_api.urllib.request.urlopen is muse_transport._open_api)
+        guarded_after_cancel.append(guarded)
+        # Stop before urlopen if the original namespace was restored early.
+        assert guarded, 'SDK transport was restored before its worker finished'
+        assert urllib.request.urlopen is original_urlopen
+        assert os.environ['MUSEGADGET_STATE_DIR'] != state_before
+        assert os.path.isdir(os.environ['MUSEGADGET_STATE_DIR'])
+        assert 'MUSEGADGET_SDK_TOKEN' not in os.environ
+        return request
+
+    def fetch():
+        try:
+            worker_results.append(
+                muse_api.fetch_vms_with_status('synthetic-worker-access'))
+        except BaseException as error:
+            # Record failures in the cancelled worker for the main test.
+            worker_errors.append(error)
+        finally:
+            worker_finished.set()
+
+    class Opener:
+
+        def open(self, request, timeout):
+            opened.append((request.full_url, timeout))
+            assert request.get_header('Authorization') == (
+                'Bearer synthetic-worker-access')
+            return addinfourl(io.BytesIO(b'{"vm_list": []}'),
+                              Message(),
+                              request.full_url,
+                              code=200)
+
+    async def background_fetch(self):
+        loop_holder.append(asyncio.get_running_loop())
+        await asyncio.to_thread(fetch)
+
+    async def cancel_after_worker_started(awaitable, timeout):
+        assert timeout == 5
+        task = asyncio.create_task(awaitable)
+        await original_wait_for(worker_started.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        cancelled.append(True)
+        # Model wait_for's completed cancellation; the executor still has work.
+        raise TimeoutError
+
+    async def release_during_shutdown(self, *args, **kwargs):
+        assert cancelled == [True]
+        assert not worker_finished.is_set()
+        release_worker.set()
+        return await original_shutdown(self, *args, **kwargs)
+
+    monkeypatch.setattr(muse_transport, 'Request', paused_request)
+    monkeypatch.setattr(muse_transport, 'build_opener', lambda *_args: Opener())
+    monkeypatch.setattr(tls, 'client_context', object)
+    monkeypatch.setattr(service.Service, 'run', background_fetch)
+    monkeypatch.setattr(asyncio, 'wait_for', cancel_after_worker_started)
+    monkeypatch.setattr(asyncio.BaseEventLoop, 'shutdown_default_executor',
+                        release_during_shutdown)
+    result = send_message(copy.deepcopy(BUNDLE),
+                          'must not send',
+                          lambda _: pytest.fail('must not persist'),
+                          lambda: pytest.fail('must not arm'),
+                          deadline_seconds=5)
+    assert not result.attempted and not result.acknowledged
+    assert worker_finished.is_set() and not worker_errors
+    assert guarded_after_cancel == [True]
+    assert worker_results == [([], 200)]
+    assert opened == [('https://api.muse.ai/fetch_vms', 15)]
+    assert muse_api.urllib is original_namespace
+    assert urllib.request.urlopen is original_urlopen
+    assert os.environ['MUSEGADGET_STATE_DIR'] == state_before
+    assert os.environ['MUSEGADGET_SDK_TOKEN'] == 'synthetic-previous-token'

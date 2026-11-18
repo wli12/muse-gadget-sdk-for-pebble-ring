@@ -481,3 +481,37 @@ def test_cloud_requires_exact_bearer_without_legacy_token_fallback(
     assert client.post('/index', data=raw,
                        headers=headers).status_code == expected_status
     assert len(calls) == (1 if expected_status == 200 else 0)
+
+
+def test_storage_client_uses_fixed_google_endpoint(monkeypatch):
+    import app as module
+
+    options = []
+    client = SimpleNamespace(bucket=lambda name: ('bucket', name))
+    for name in ('STORAGE_EMULATOR_HOST', 'API_ENDPOINT_OVERRIDE'):
+        monkeypatch.delenv(name, raising=False)
+
+    def create_client(**kwargs):
+        options.append(kwargs)
+        return client
+
+    monkeypatch.setattr(module.storage, 'Client', create_client)
+    assert module.GCSStore('synthetic').bucket == ('bucket', 'synthetic')
+    assert options == [{
+        'client_options': {
+            'api_endpoint': 'https://storage.googleapis.com'
+        }
+    }]
+
+
+@pytest.mark.parametrize('name',
+                         ['STORAGE_EMULATOR_HOST', 'API_ENDPOINT_OVERRIDE'])
+def test_storage_endpoint_override_is_rejected_before_client(monkeypatch, name):
+    import app as module
+
+    monkeypatch.setenv(name, 'https://collector.invalid')
+    monkeypatch.setattr(module.storage, 'Client',
+                        lambda **_: pytest.fail('must not create a client'))
+    with pytest.raises(RuntimeError,
+                       match='storage_endpoint_override_not_allowed'):
+        module.GCSStore('synthetic')

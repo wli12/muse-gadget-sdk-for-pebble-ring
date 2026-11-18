@@ -16,12 +16,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 FROM base AS checks
 RUN pip install --no-cache-dir pytest==9.2.0
-COPY audio.py audio_test.py pebble_ring_bridge.py pebble_ring_bridge_test.py ./
-RUN python -m pytest -q audio_test.py pebble_ring_bridge_test.py
+COPY audio.py audio_test.py muse_transport.py muse_transport_test.py pebble_ring_bridge.py pebble_ring_bridge_test.py Dockerfile ./
+RUN python -m pytest -q audio_test.py muse_transport_test.py pebble_ring_bridge_test.py
 
 FROM base
-# Use the exact shared parser and decoder sources that passed their tests.
-COPY --from=checks --chown=bridge:bridge /app/audio.py /app/pebble_ring_bridge.py ./
+# Use the exact parser, decoder, and network policy that passed their tests.
+COPY --from=checks --chown=bridge:bridge /app/audio.py /app/muse_transport.py /app/pebble_ring_bridge.py ./
 COPY --chown=bridge:bridge app.py muse_sender.py ./
 USER bridge
 RUN python -c "from app import app; assert app.test_client().get('/health').status_code == 200"

@@ -12,7 +12,7 @@ The complete setup and operations guide is available in
 including prerequisites, Google Cloud signup, initial pairing, deployment,
 phone settings, verification, privacy, costs and recovery. A Linux host with BLE
 or a Mac is used once for initial Muse Bluetooth pairing and can then be turned
-off. Daily ring-to-phone transfers still use Bluetooth. Cloud Run needs no
+off after pairing-state upload and cloud setup. Daily ring-to-phone transfers still use Bluetooth. Cloud Run needs no
 Bluetooth or always-on Mac.
 
 | Runtime file | Responsibility |
@@ -27,7 +27,7 @@ Bluetooth or always-on Mac.
 optional experimental adapter; `verify_webhook.py` performs signed connectivity
 checks and an explicitly selected test message. These tools are outside the
 runtime path. No credentials, generated configuration or recordings belong in Git.
-The [privacy section](../../../README.md#privacy-and-data-flow) lists all intended
+The [privacy section](../../../README.md#2-privacy-and-data-flow) lists all intended
 data recipients and the limits of these restrictions.
 
 Run tests from the repository root with Python 3.12:

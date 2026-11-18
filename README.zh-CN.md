@@ -31,35 +31,64 @@ limitations under the License.
 | 戒指 | 每次发送指令 | 一枚 [Pebble Index 01](https://repebble.com/products/pebble-index-01)，按[官方指南](https://help.repebble.com/en/articles/15434751-index-01-getting-started-guide)与手机配对。无需购买 Pebble 手表。 |
 | 手机 | 每次发送指令 | **iPhone 或 Android**，需要蓝牙和网络。iPhone 因 Muse 要求需 **iOS 18+**；Android 需兼容下方两款 App，不能仅把 Pebble 的 Android 8.0 要求当作整套方案的最低版本。 |
 | 手机 App、Muse 账户和 SDK token | 首次设置及日常使用 | 安装 [Pebble](https://repebble.com/app) 和 Meta 的 Muse（[iPhone](https://apps.apple.com/us/app/muse-from-meta/id6760173601)、[Android](https://play.google.com/store/apps/details?id=com.facebook.aura)）。Pebble 应已能接收／转写录音并提供签名 Webhook。登录 Muse，申请 [Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens)，阅读[条款](https://gadgets.muse.ai/sdk-terms)。 |
-| 自己的 Google Cloud 项目 | 日常云端中转 | 本指南使用 **Cloud Run 运行程序**、**私有 Cloud Storage 保存状态文件**，无需另外租一台常开的虚拟机。低频使用有机会落入免费额度。准备 Google 账户和关联结算账户的项目：[注册步骤](#47-注册-google-cloud-并准备项目)、[试用金](#48-免费试用金)、[查看实际花费](#49-查看实际花费)。 |
-| 蓝牙配对电脑 | **只在首次设置时用一次** | 可用本地带 **BLE 蓝牙的 Linux 主机**，或使用实验性适配器的 **Mac**，将 Muse 与设备身份配对。完成配对、上传状态并设置好云端后即可关机。[两种配对方式选一种](#32-只做一次-muse-配对)。 |
-| 部署用终端和工具 | 首次部署、更新和检查 | 最直接的做法是用**上面同一台 Mac／Linux 电脑的终端**运行 Git、Python 3.12 和 `gcloud`。也可选择 **Cloud Shell，即 Google 网页内的云端终端**。它是执行部署命令的另一种方式，无需再买电脑；蓝牙配对仍在本地完成。[准备工具](#31-准备项目代码和工具)。 |
+| 自己的 Google Cloud 项目 | 日常云端中转 | 本指南使用 **Cloud Run 运行程序**、**私有 Cloud Storage 保存状态文件**，无需另外租一台常开的虚拟机。低频使用有机会落入免费额度。准备 Google 账户和关联结算账户的项目：[注册步骤](#44-注册-google-cloud-并准备项目)、[试用金](#45-免费试用金)、[查看实际花费](#46-查看实际花费)。 |
+| 蓝牙配对电脑 | **只在首次设置时用一次** | 可用本地带 **BLE 蓝牙的 Linux 主机**，或使用实验性适配器的 **Mac**，将 Muse 与设备身份配对。完成配对、上传状态并设置好云端后即可关机。[两种配对方式选一种](#31-给用户交给-codex完成账号和手机操作)。 |
+| 部署用终端和工具 | 首次部署、更新和检查 | 最直接的做法是用**上面同一台 Mac／Linux 电脑的终端**运行 Git、Python 3.12 和 `gcloud`。也可选择 **Cloud Shell，即 Google 网页内的云端终端**。它是执行部署命令的另一种方式，无需再买电脑；蓝牙配对仍在本地完成。[准备工具](#31-给用户交给-codex完成账号和手机操作)。 |
 | Apple Watch（可选） | 可选的回答查看入口 | 如有需要，安装官方 Muse Watch App；本桥接触发的回答同步和通知仍未验证。 |
 
 ## 2. 隐私与数据去向
 
 **日常数据链路：** 戒指 → **蓝牙** → 手机 Pebble App → **HTTPS** → 自己的 Google Cloud Run → **Muse Link** → Meta Muse。
 
-| 谁会收到数据 | 收到什么 | 保存与访问范围 |
+| 参与方 | 能看到什么 | 不能看到什么（本方案不提供） |
 | --- | --- | --- |
-| 手机上的 Pebble App | 戒指录音和转写。 | 本地／云端处理、备份和集成由 Pebble 设置决定。 |
-| Pebble 选用的云服务（若启用） | 所选服务需要的录音或文字。 | 可能包括 Wispr Flow（识别）、OpenRouter（云端代理）；接收方取决于设置。**Webhook only 不代表一定使用本地识别。** |
-| 自己项目中的 Google Cloud | 处理录音／文字；设备凭证、Webhook 密钥、投递摘要／状态和请求元数据。 | 中转持久保存凭证、状态和元数据，**不保存录音或笔记正文**。有权限的管理员及 Google 受控运维、法定访问等仍可能访问。 |
-| Meta Muse | 提交的文字／录音、设备注册和鉴权信息。 | Meta 处理并保存；其政策说明默认会用脱敏对话／工具轨迹训练，可在设置中退出。 |
-| Muse 调用的 App、工具或网站 | 完成该次交互所需的任务数据。 | 取决于你的任务、集成与权限，以及接收方的政策。 |
-| 一次性配对电脑 | 设备身份、访问／刷新凭证和 SDK token。 | 保存在仅当前用户可读的本地文件中；能访问电脑／账户的人仍可能读取。日常云端中转的笔记不经过它。 |
+| 手机上的 Pebble App | 戒指录音／转写，以及配置在 App 中的 Webhook 地址、Bearer 和签名密钥。 | 中转不向 Pebble 返回 Muse 回答／聊天历史，也不提供 Muse 设备凭证或 SDK token。 |
+| Pebble 选用的云服务（例如 Wispr Flow／OpenRouter，若启用） | Pebble 按识别、代理、备份和集成设置发送的录音／文字。 | 中转不直接调用它们，也不把 Muse 凭证或回答发给它们；Pebble 自己附带的数据由其设置与政策决定。 |
+| 自己的 Google Cloud 项目 | 上传的录音／文字、设备凭证、Webhook 密钥及投递／请求元数据；有权限的管理员及 Google 受控运维、法定访问等仍适用。 | 中转不上传手机／电脑上的其他文件或账号密码；会处理笔记内容，但不把录音／正文保存在存储或日志中。 |
+| Meta Muse | 提交的录音／文字和 Muse 设备／鉴权信息；由 Meta 处理、保存。 | 中转不向 Muse 提供自己使用的 Google Cloud IAM 凭证或 Webhook Bearer／签名密钥。 |
+| Muse 调用的 App、工具或网站 | 按你的任务与授权分享的数据。 | 中转不会自动把保存的凭证包交给它们；单独授权的应用可能有其他访问权限。 |
+| 一次性配对的 Mac／Linux 电脑 | 仅当前用户可读文件中的设备身份、访问／刷新凭证、SDK token；能访问电脑／账户的人仍可能读取。 | 迁移到云端后，日常录音／转写和回答不再经过这台电脑。 |
+| GitHub、项目作者和审查模型 | 公开源码／文档、公开 GitHub 署名；审查输入为源码／文档。 | 正常中转不会向它们或 Codex/OpenAI 上传私有凭证、录音／转写或 Muse 聊天。 |
 
-**中转不增加其他接收方：** 正常运行不会把笔记或凭证上传给作者、GitHub、Codex/OpenAI 或审查模型。GitHub／软件包下载用于获取代码，不接收笔记。云端连接限制及其适用边界见 [FYI](#43-运行限制权限和费用边界)。
+**“不能看到”的范围：** 指中转默认没有传输或开放这些数据。你主动放进指令的信息会一起发送；其他授权、服务商后台或管理员可能有其他访问途径，不等于对方绝对不可能获得。
+
+**需要检查的设置：** Webhook only 不代表使用本地识别。Muse 政策说明默认使用脱敏对话／工具轨迹训练，可在设置中退出；中转不会替你修改该偏好。
 
 政策与设置：[Pebble 隐私](https://repebble.com/privacy)、[Pebble 处理选项](https://help.repebble.com/en/articles/15434751-index-01-getting-started-guide)、[Google 访问控制](https://docs.cloud.google.com/docs/security/privileged-access-management)、[Muse 政策](https://muse.ai/blog/security-and-safety-for-ai-agents-our-approach-with-muse)。本地识别与本地代理是[独立选项](https://developer.repebble.com/index-01/)；也请核对 Muse 的训练设置和工具权限。
 
 ## 3. 一步步完成部署
 
-先确认准备清单和隐私说明，再按顺序操作。详细注册与查费参考放在文末。
+### 3.1 给用户：交给 Codex，完成账号和手机操作
 
-### 3.1 准备项目、代码和工具
+代码、依赖、云端私有状态、构建、部署和检查可以交给 Codex。你主要完成下面这些账号和实体设备操作：
 
-使用自己的、已关联结算账户的项目；如还没有，先按[注册步骤](#47-注册-google-cloud-并准备项目)创建。最直接的方式是在配对用的同一台 Mac／Linux 电脑终端执行下面命令。也可用 Cloud Shell 部署，但蓝牙配对仍需本地电脑。
+| 步骤 | 你需要做什么 | Codex 负责什么 |
+| --- | --- | --- |
+| 1. 发起部署 | 把下方指令发给 Codex，说明手机是 iPhone 还是 Android、配对电脑是 Mac 还是 Linux。 | 读取本仓库，检查环境，一次列清需要你手动完成的事情。 |
+| 2. Google Cloud | 登录，选择自己的、已关联结算账户的项目，完成 Google 的授权页面。[注册步骤](#44-注册-google-cloud-并准备项目)／[试用金](#45-免费试用金)。 | 准备专用云资源并部署中转，保持 min 0／max 1。 |
+| 3. Muse token | 登录 Muse，申请 [SDK token](https://gadgets.muse.ai/settings/sdk-tokens)，在工具的本地隐藏输入提示中填写；不要把实际值写进 README 或公开消息。 | 启动配对工具，私下保存凭证。 |
+| 4. 配对一次 | 手机中打开 **Muse → Settings → Devices → Developer mode → Add Device**，选择工具显示的设备并确认。 | 运行本地蓝牙适配器，导出／上传配对状态，停止本地身份运行。 |
+| 5. 设置 Pebble | **Index → 齿轮 → Ring Button → Double click & hold → Webhook only → Webhook settings**。填入 Codex 私下提供的 URL 和签名密钥；新增 Header `Authorization`，值为 `Bearer <值>`（中间有空格）；启用签名，选 **Both**，再 Save。 | 提供私有配置值，验证签名连接测试。 |
+| 6. 验收 | 首次测试保持 Pebble 打开。按一下松开，随即再次按下并保持讲话，最后松开；到 Muse 确认消息和回答。 | 必要时检查日志、投递与去重；不盲目重发确认不明的指令。 |
+
+上面的手机菜单路径以 iPhone 为例；若没有 Index，先选 More → Index。Android 界面可能不同。
+
+可以把这段指令直接发给 Codex：
+
+```text
+请读取 https://github.com/wli12/muse-gadget-sdk-for-pebble-ring （分支 pebble-cloudrun-pass-through）中的 README，按机器操作参考，把 Pebble Index 01 → Meta Muse 中转部署到我授权的 Google Cloud 项目。使用一次性本地蓝牙配对、Cloud Run 最小实例 0／最大实例 1，以及 Both 载荷。凭证保存在必需的、仅当前用户可读的本地文件及专用私有云存储中，不要把真实凭证或我的部署地址提交到 GitHub。请先完成可自动化的工作，一次列清需要我登录、授权和操作手机的步骤，并验证结果。
+```
+
+上传配对状态、完成云端设置后，配对电脑即可关机；日常只需手机保持蓝牙和联网。连接测试成功不等于 Muse 已回答，还要核对真实戒指消息。
+
+### 3.2 给 Codex：部署与维护参考
+
+<details>
+<summary>展开技术操作步骤——供 Codex 或手动部署的管理员读取</summary>
+
+#### 3.2.1 准备项目、代码和工具
+
+使用自己的、已关联结算账户的项目；如还没有，先按[注册步骤](#44-注册-google-cloud-并准备项目)创建。最直接的方式是在配对用的同一台 Mac／Linux 电脑终端执行下面命令。也可用 Cloud Shell 部署，但蓝牙配对仍需本地电脑。
 
 可直接克隆包含本功能分支的公开 fork。若要使用自己的 fork，先确认其中保留了 `pebble-cloudrun-pass-through` 分支，再替换 `GITHUB_REPO`；只复制官方 `main` 分支不会带入本方案。Google Cloud 项目和部署账户仍应使用自己的值：
 
@@ -100,11 +129,11 @@ export BRIDGE_DEPLOY_DATA="$PRIVATE_WORK_DIR/deploy/$PROJECT_ID"
 
 如果使用 Google Cloud Shell，代码、测试和部署命令相同；先确认项目与 Google 的授权弹窗。BLE 配对仍发生在本地 Mac/Linux 上，配对文件进入 Cloud Shell 本身也是向 Google 转移凭证，应该在已选择该方案之后才上传。不要使用公开文件链接或聊天附件转移这些文件。
 
-### 3.2 只做一次 Muse 配对
+#### 3.2.2 只做一次 Muse 配对
 
 **Linux 和 Mac 选一种，不需要两种都做。** 配对在本地电脑执行；若上一步选了 Cloud Shell，也需在本地配对电脑克隆相同仓库、准备 Python 和私有工作目录，配对完成后再把文件安全转移到所选部署终端。
 
-#### 方式 A：带 BLE 的 Linux
+##### 方式 A：带 BLE 的 Linux
 
 完整协议说明见 [Linux SDK README](linux/README.md#set-it-up-with-muse)。使用支持 BlueZ/BLE 的 Debian、Ubuntu 或树莓派系统；普通云端主机没有可供手机配对的本地蓝牙。以下命令在**该 Linux 主机**上的同一代码仓库执行。
 
@@ -137,7 +166,7 @@ done
 
 如果部署在另一台机器，安全转移整个目录，保持权限，并在部署端设置相应的绝对路径。三个文件属于同一个设备身份，不能混用。不要在云端开始刷新令牌后重新启动这个本地身份；本地副本届时可能已经过期。
 
-#### 方式 B：Mac
+##### 方式 B：Mac
 
 本次实际使用的适配器是社区实验性工具，**不是 Meta 官方支持 macOS 的声明**。它只替换蓝牙平台适配层，复用官方配对流程；不启动通用主机命令服务。需要 macOS 蓝牙、Python 3.12 和 PyObjC wheel。
 
@@ -157,7 +186,7 @@ SDK token 通过隐藏输入提示提供，程序不接受命令行 token。macO
 
 如果配对与部署使用不同终端，先安全转移配对文件，再**在部署终端里**设置 `PAIRING_DIR='/absolute/path/to/muse-state'`，填转移后的实际目录；若使用同一台电脑／终端，保留上面已经设置的 `PAIRING_DIR` 即可。
 
-### 3.3 部署到 Google Cloud
+#### 3.2.3 部署到 Google Cloud
 
 使用单独的新项目或确认这些专用资源名称没有被其他应用使用。脚本会在专用桶上调整版本、soft delete 和 IAM 设置，不能把已有通用桶换名接入后盲目执行。
 
@@ -206,7 +235,19 @@ curl --fail --show-error --silent "$SERVICE_URL/health"
 
 部署时唯一必需的运行环境变量是 `BRIDGE_BUCKET`；密钥从私有桶加载，不放在命令参数、镜像或 Cloud Run 环境变量中。所有消息进入 Muse 主聊天，不提供聊天选择或内容路由选项。
 
-### 3.4 设置手机并测试戒指
+##### 云端资源名称
+
+| 资源 | 名称 |
+| --- | --- |
+| 区域 | `us-central1` |
+| Cloud Run 服务 | `muse-ring-bridge` |
+| 私有状态桶 | `${PROJECT_ID}-muse-ring-state` |
+| 构建源文件桶 | `${PROJECT_ID}-muse-ring-build` |
+| Artifact Registry 仓库 | `muse-ring` |
+| 运行服务账号 | `muse-ring-runtime@${PROJECT_ID}.iam.gserviceaccount.com` |
+| 构建服务账号 | `muse-ring-builder@${PROJECT_ID}.iam.gserviceaccount.com` |
+
+#### 3.2.4 设置手机并测试戒指
 
 需要 URL：`$SERVICE_URL/index`，以及私有 `KEYS_FILE` 中的 `bearer` 和 `signing_secret`。在所选部署环境的编辑器中打开该文件（使用 Cloud Shell 时可用 Cloud Shell Editor），复制到手机对应字段；不要把文件、密钥或包含密钥的截图上传到 GitHub 或聊天。手机配置步骤直接写在下方，不需要额外的配置页面生成器。
 
@@ -224,11 +265,11 @@ Pebble **1.18.0 iPhone** 的路径如下，见 [官方 Index 设置源码](https
 
 如果关闭了设置页，重新进入**相同手势**的 Webhook 页面，不要误改另一手势。Android 支持相同协议但 UI 可能不同；没有把 iPhone 的点击路径当成 Android 的已验证步骤。
 
-录音或转写在 Pebble 中成功，不代表手机发送过 Webhook；应同时确认所用手势。转写即使没有“Muse”、被 ASR 写成“Hey Muse”，也会完整进入 Muse，不再被旧的前缀条件拦截。Both 使用 Pebble 转写和语音；Recording 只使用语音。
+Pebble 中出现笔记不代表 Webhook 已发送；应确认配置的手势，并在 Recent runs 核对实际载荷。
 
 手机在后台接收戒指音频、排队和发出 Webhook 仍受 iOS/Pebble 的运行状态影响。Both 包含 Pebble ASR 等待；Recording 可避开这段等待，但不能保证后台即时送达。若打开 Pebble 后才开始处理，应分别记录“手机接收/发出”和“云端接收”的时间；Google 云端无法修复尚未发出的录音，也不能强制 iOS 后台 ASR 立即运行。
 
-### 3.5 验证云端服务
+#### 3.2.5 验证云端服务
 
 先执行不发聊天的连接检查：
 
@@ -243,96 +284,13 @@ python "$BRIDGE_DIR/verify_webhook.py" --url "$SERVICE_URL" --keys "$KEYS_FILE" 
   --send --report "$PRIVATE_WORK_DIR/smoke-report.json"
 ```
 
-每次单独运行 `--send` 都产生新 ID，因而会新增一条消息。脚本不自动重试网络失败，不跟随重定向；报告只保留 delivery ID 和检查元数据，不含转写或密钥。测试文字不需要“Muse”等前缀；离线测试及 2026-11-16 的受控云端验证已经覆盖没有此前缀的文本。
+每次单独运行 `--send` 都产生新 ID，因而会新增一条消息。脚本不自动重试网络失败，不跟随重定向；报告只保留 delivery ID 和检查元数据，不含转写或密钥。
 
 `verify_webhook.py --send` 检查文字提交，不证明语音或 Both 提交成功。镜像构建中的 `audio_test.py` 使用合成音频验证真实 FFmpeg 转换，不访问 Muse。用户已确认 Recording 和 Both 模式的真实戒指消息及回答；Both 同时显示原转写和完整可播放录音。只显示文字或仅得到 SDK ACK，均不能证明 App 是否保留并展示音频。
 
 验收顺序应为：离线测试 → 容器 codec smoke 与 HTTP 启动 → 签名合成事件 → 一次显式真实消息及去重 → 真实戒指所选载荷。前几项不能代替最后一项。应在 Muse 中亲自确认消息位于正确账户和主聊天。
 
-## 4. FYI：实现与维护
-
-跟着部署步骤操作时，可以先跳过本部分；需要理解原理、排障或查费时再查阅。
-
-### 4.1 各部分实际在哪里运行
-
-看自己拥有的资源，只需区分 **本地 Mac／Linux 电脑**和**自己的 Google Cloud 项目**。Cloud Run 是托管运行中转程序的地方，不需要自己管理一台虚拟机；Cloud Storage 是存文件的地方，不是另一台运行程序的电脑。
-
-| 位置 | 做什么／对应哪些文件 | 什么时候需要 |
-| --- | --- | --- |
-| 本地 Mac 或 Linux 电脑 | 做蓝牙配对；Mac 用 `mac_pairing.py`，Linux 用官方安装器。同一台电脑也可执行部署命令。 | 首次配对和上传状态；以后可选地做管理操作。日常使用时可以关机。 |
-| Google Cloud → **Cloud Run** | 运行 `app.py`、`muse_sender.py`、`muse_transport.py`、`audio.py` 和共享的 `pebble_ring_bridge.py`，接收 Webhook 并发送给 Muse。 | 每条笔记到达时；空闲实例可缩到零。 |
-| Google Cloud → **Cloud Storage** | 保存配对凭证、Webhook 密钥、租约和投递状态。“桶”就是存这些文件的容器；中转不保留笔记正文／录音。 | 在请求之间持续保存状态，即使 Cloud Run 暂无运行实例也保留。 |
-| 部署终端：**本地 Mac／Linux 终端，或 Cloud Shell** | 运行 `deploy.sh`、`verify_webhook.py` 和检查。Cloud Shell 在浏览器里打开，但命令实际运行在 Google 的环境中。 | 部署、更新和检查时使用，不参与日常转发；部署终端选一种即可。 |
-| Google Cloud → **Cloud Build + Artifact Registry** | 根据 `Dockerfile` 和依赖打包、测试，把生成的镜像保存起来供 Cloud Run 启动。 | 发布版本时运行构建，之后镜像保留；配对凭证不进入构建。 |
-| GitHub | 保存公开源码、指南和 PR 历史。 | 分发代码／审阅，不接收戒指 Webhook。 |
-| Meta Muse | 处理提交的指令并生成回答。 | 每条提交的指令；它与自己的 Mac、Google 项目是不同的服务。 |
-
-官方介绍：[Cloud Run](https://docs.cloud.google.com/run/docs/overview/what-is-cloud-run)、[Cloud Storage](https://docs.cloud.google.com/storage/docs/introduction)、[Cloud Shell](https://docs.cloud.google.com/shell/docs)、[Cloud Build](https://docs.cloud.google.com/build/docs/overview)。中转没有托管在 Codex/OpenAI 的机器上。GitHub 上传与 Google 部署是两件事，本仓库没有“合并即部署”的自动流程。
-
-#### 云端资源名称
-
-| 资源 | 名称 |
-| --- | --- |
-| 区域 | `us-central1` |
-| Cloud Run 服务 | `muse-ring-bridge` |
-| 私有状态桶 | `${PROJECT_ID}-muse-ring-state` |
-| 构建源文件桶 | `${PROJECT_ID}-muse-ring-build` |
-| Artifact Registry 仓库 | `muse-ring` |
-| 运行服务账号 | `muse-ring-runtime@${PROJECT_ID}.iam.gserviceaccount.com` |
-| 构建服务账号 | `muse-ring-builder@${PROJECT_ID}.iam.gserviceaccount.com` |
-
-### 4.2 相对原始 Muse 官方示例的变化
-
-| 行为 | 原官方示例 | 本方案 |
-| --- | --- | --- |
-| 主机和连接 | Linux 常驻服务，依赖本机 SDK socket | Cloud Run 按请求连接官方 SDK；无常开 Mac、VPN 或隧道 |
-| 聊天目标 | 必须指定 side chat；追加 `[via Pebble Ring]` 文本后缀 | 固定 Muse 主聊天；转写仅清理首尾空白，不加后缀、暗号或路由 |
-| 输入 | 提取文字，不把录音作为语音提交 | Both 同条提交转写和录音；兼容仅文字、仅录音 |
-| 音频 | 没有音频转换 | 本地 FFmpeg 转 WAV，超限整条拒绝，不截断后执行 |
-| Webhook 协议 | `/ingest`；multipart、JSON 或纯文本；共享令牌 | `/index`；Pebble v1 multipart、Bearer、HMAC、时间戳窗口 |
-| 测试事件 | 没有 Pebble v1 测试事件的专门处理 | 验签后只返回连通结果，不向 Muse 下达测试任务 |
-| 云端状态 | 交给本地常驻 SDK 服务 | 私有 GCS 保存轮换状态、CAS 租约与投递记录 |
-| 重复与不确定投递 | 没有持久投递记录 | 同一 ID 去重；已尝试但确认不明时不自动重发 |
-| 主机命令权限 | 依赖已安装的通用 SDK 服务 | 中转不注册 shell、文件读写或其他主机命令 |
-| 网络目的地 | SDK 支持自定义端点和重定向 | 固定官方 Muse 地址、拒绝重定向／环境代理；固定 Google Storage 端点 |
-| 部署、验证、复现 | 一个本地监听示例 | 增加容器、最小权限部署、对应模块测试及本指南 |
-
-**固定的 SDK 版本：** [Meta 官方提交 `08f89ed`](https://github.com/facebookincubator/muse-gadget-sdk/commit/08f89ed329918c27d53b11192065ad6b2cb0e868)。这是**公开 Git 仓库的源码版本编号**，使用该版本的人都用同一个编号；不是你的 SDK token、账号、设备身份或配对码。构建安装未修改的官方 SDK，适配层直接复用原示例的解析辅助函数。直接依赖已固定，但传递依赖和基础镜像 digest 仍可能变化；需要完全相同的产物时保留镜像 digest。[运行文件与对应测试](linux/examples/pebble_ring_bridge_cloudrun/README.md)。
-
-### 4.3 运行限制、权限和费用边界
-
-这次采用用户自己的 Google Cloud 项目。Google Cloud Run 会处理录音或转写，私有 Cloud Storage 会保存 Muse 的设备身份、访问/刷新令牌、SDK token 和 Webhook 密钥；Muse 接收对应语音笔记或文字并执行任务。这是使用 Google 的云端方案。手机原有的录音、转写环节仍受 Pebble 自身实现和设置影响。
-
-推荐 **Both** 载荷；仅录音、仅转写仍兼容。录音只在请求内存和 `0700` 临时目录中的 `0600` 文件中转换，使用后清理，不写入 GCS 投递记录。桥接不将录音、笔记正文或 Muse 聊天内容写入日志，关闭普通 HTTP 访问日志和 SDK 内容日志；Google 平台仍会记录请求元数据、构建与服务运行信息。投递记录只留所提交内容的 SHA-256 摘要，不应将摘要当成匿名化保证。桥接未实现回答播放或实时语音通话。
-
-转换上限为 **8 MiB 输入、60 秒、PCM16LE / 单声道 / 16 kHz WAV**，满足官方 SDK 的 **2 MiB WAV** 上限；整个 HTTP body 上限 9 MiB，留出 multipart 开销。超限整条拒绝，不截掉后半句再执行。FFmpeg 只接受选定的 MOV/WAV demuxer 和本地 file/pipe 协议，禁用 MOV 外部数据引用，15 秒超时，输出按解码后的字节数限制。
-
-关键权限与隔离：
-
-- 状态桶和构建桶分别创建，启用 uniform bucket-level access 和 public access prevention。
-- 运行服务账号只在专用状态桶拥有 `roles/storage.objectUser`；不创建或下载服务账号 JSON 私钥。
-- 构建服务账号只读取构建桶，在专用镜像仓库写入，并具有日志写入权限；脚本不给它状态桶权限。
-- 项目管理员仍可能读取状态，组织已有的继承权限也仍然有效；专用服务账号不能限制项目所有者。
-- 构建上下文只含云端模块、音频／连接限制测试、共享的 `pebble_ring_bridge.py` 及其测试、依赖清单和 Dockerfile；配对文件、密钥和设置页不会进入镜像。
-- 云端桥接不向 Muse 注册 shell、文件读写或其他主机命令。用于一次配对的标准 Linux 安装器则会安装通用命令服务，因此配对步骤使用单独账户，并在迁移前停止服务。
-
-Cloud Run 配置为 **us-central1、1 vCPU、1 GiB、按请求分配 CPU、min 0、max 1、concurrency 1、120 秒请求超时**。服务和修订版都设置实例上限；跨修订版的设备互斥仍依靠 GCS 租约。空闲可缩到零，适合少量戒指笔记。
-
-**低用量有机会落在免费额度内，不能保证每月零费用。** Cloud Run 免费额度按结算账户汇总；存储、存储操作、网络、构建、镜像和日志另有计费规则。启用结算不等于会收费，免费额度和预算提醒也不等于硬性费用上限。部署前按自己的使用量查看 [Cloud Run 定价](https://cloud.google.com/run/pricing)、[Cloud Storage 定价](https://cloud.google.com/storage/pricing)、[Cloud Build 定价](https://cloud.google.com/build/pricing) 和 [Artifact Registry 定价](https://cloud.google.com/artifact-registry/pricing)，设置合适的预算提醒。
-
-脚本让构建源文件在一天后过期，镜像采用“旧于七天清理、至少保留最新一个版本”的策略。状态桶关闭版本保留和 soft delete，避免旧刷新令牌长期保留；这也意味着不能依靠桶的历史版本找回误删状态。投递记录没有自动清理，删除它会结束对应 delivery ID 的去重保护。
-
-**Cloud Run 转发运行时落实的限制：** Muse API 只连接 `https://api.muse.ai`，Link 只连接 `wss://hatch.metaaivm.com`（标准 HTTPS／WSS 端口 443）；拒绝 API 和 WebSocket 重定向，并禁用这些连接的环境代理。存储固定使用 Google Storage API，拒绝模拟器／自定义端点覆盖。FFmpeg 只在本地转换录音，不启用网络协议。没有额外增加统计、广告、其它语音识别／模型 API 或项目作者的上传端点。这些连接限制作用于云端运行时，不覆盖独立的一次性 Mac／Linux 配对工具。
-
-正常运行时，中转不会把录音、转写或凭证发送给项目作者、GitHub、Codex/OpenAI 或代码审查模型。GitHub 和软件包服务用于获取源码／依赖，不接收笔记。原始录音只在内存和私有临时文件中处理，随后清理；内容摘要也**不能当作匿名化保证**。
-
-若希望减少上游接收录音的服务，请检查 Pebble 的语音识别、云端回退、备份和集成设置；本地语音识别与本地代理是[彼此独立的选择](https://developer.repebble.com/index-01/)。也请核对 Muse 的训练／隐私设置和工具权限。上述代码约束针对已审查的中转及文档中的部署方式，不是所有手机 App、服务商后台、恶意管理员或被替换依赖的全局隔离保证。
-
-已发布隐私更新的运行检查：209 项离线测试通过，5 项因本地缺少 FFmpeg 跳过；真实编解码检查均在 Linux 构建执行，构建中 128 项测试及非 root 健康检查通过。Google Antigravity 做过仅含源码的外部审查，没有代为运行这些测试，也不是 Google 内部 Readability 认证。审查历史和精确版本见 [PR](https://github.com/wli12/muse-gadget-sdk-for-pebble-ring/pull/1)。每个新增 Python 模块对应一个 `模块名_test.py`，上游既有测试保留原名。
-
-2026-11-16 记录过实物文字／Recording／Both 验收成功。2026-11-18 的受控复验在提交前仍遇到 Muse Link HTTP 502，而健康、签名与鉴权检查通过；这不代表已确认 Meta 全局故障。Apple Watch 同步和通知仍未验证。SDK 提交确认不代表任务完成；确认丢失、令牌轮换后落盘失败仍可能需要人工核对或重新配对，不承诺永不掉线或零丢失。
-
-### 4.4 状态与重复投递
+#### 3.2.6 投递状态与恢复
 
 状态桶中仅使用以下专用路径：
 
@@ -359,9 +317,7 @@ GCS 对象 generation 前置条件用于 compare-and-swap。刷新状态先持�
 
 对 `sending` / `uncertain`，先到 Muse 看是否已有消息或已执行任务。**不要删掉 ledger 后盲目重放**，否则可能让同一指令执行两遍。崩溃留下的租约正常应等到过期；不要删除还在使用的租约强行并发。
 
-### 4.5 排障
-
-#### 初次凭证只上传成功一部分
+##### 初次凭证只上传成功一部分
 
 如果初次上传的 `muse.json` 已成功、第二个 `webhook.json` 上传失败，完整重跑会在已存在的第一个对象处停止。先核对这确实是**同一次初始设置**、有效设备状态已上传，并只检查对象元数据：
 
@@ -384,53 +340,9 @@ gcloud storage cp "$KEYS_FILE" \
 
 如果两对象都已存在，确认本次设置后直接继续私有部署。恢复过程**不删除、不覆盖 `state/muse.json`**，不重新上传旧令牌；`--if-generation-match=0` 也防止覆盖同时创建的密钥对象。
 
-#### Apple 安装 Python/Git 时 Software Update 失败
+#### 3.2.7 更新、密钥轮换和停用
 
-`/usr/bin/python3`、`/usr/bin/git` 可能触发 Apple Command Line Tools 的安装弹窗，并不代表工具已安装。出现“software is not currently available from the Software Update server”后，重复点安装不会解决桥接本身的问题。
-
-使用真正的预编译 Python/Git，避免从源码构建。Python 可选 [python.org 的 macOS 安装包](https://www.python.org/downloads/macos/)；Git 操作也可以直接在 Google Cloud Shell 的预装 Git 中完成，然后只把公开代码下载到 Mac 做 BLE 配对。若选择本地 Git，使用可信发布来源提供的现成二进制并确认版本。用明确的 Python 3.12 路径创建虚拟环境，后续调用该环境的 `python`；不要再调用会触发弹窗的系统占位程序。本方案不依赖反复执行 `xcode-select --install`。
-
-#### 蓝牙配对不出现或中断
-
-确认运行的是配对工具，允许对应进程的蓝牙权限，手机 Muse 已开启 Developer mode，设备仍在配对窗口内。Mac 适配器是实验性路径，遇到平台兼容问题可使用官方 Linux BLE 路径；不要用改变官方加密协议来解决平台问题。
-
-#### 新项目 Cloud Build 首次提交 403
-
-实际初次初始化中，源文件上传已成功，但创建 Build 的请求暂时返回 403；等待新服务账号/服务代理 IAM 生效后，一次受控重试成功。先核对当前项目、执行账户、Cloud Build API、自定义构建服务账号及脚本列出的权限，不要因临时传播延迟给运行账号增加项目 Owner。如果问题持续，应按 Google 返回的具体权限排查，不能把所有 403 都认定为传播延迟。
-
-#### Cloud Run 看似 Ready，实际请求却失败
-
-曾出现源码文件为 `0600`，Docker `COPY` 后由 root 持有，运行用户 `bridge` 无法导入 `app.py`；只检查 TCP 端口会过早认为服务可用。最终 Dockerfile 使用 `COPY --chown=bridge:bridge`，并在镜像构建中以非 root 用户导入应用、检查 `/health`。部署脚本还配置 HTTP startup probe：`/health`、端口 8080、初始延迟 0、周期 5 秒、超时 2 秒、失败阈值 12。
-
-这只能确认应用成功启动，不能替代真实的 GCS 和 Muse 连通测试。不要通过将容器改为 root 来掩盖文件所有权问题。
-
-#### Muse WebSocket 握手 HTTP 502
-
-曾在 Meta WSS 建立阶段遇到 HTTP 502。现在只在**尚未开始发送消息**时，对明确的握手 HTTP 429/500/502/503/504 做最多三次连接尝试，共用 55 秒 SDK 等待预算。实际 `send_chat` / `send_voice` 不自动重试；进入发送阶段后发生不确定错误会记为需人工核对。
-
-2026-11-16 的受控测试曾取得提交确认和重复投递检查结果；2026-11-17 的复验再次遇到握手 502，新旧运行版本均复现，记录为发送前失败，尚未取得新的投递确认。这不能据此断言 Meta 全局故障。不要为此重置有效配对或关闭 TLS/签名。诊断只记录阶段、异常类别、HTTP 状态等受限字段，不记录完整异常文本或远端响应正文。
-
-#### 没有“Muse”前缀就不进聊天
-
-这是先前实现中的内容条件，最终代码已删除。真实转写如“Hey Muse，……”以及普通中文都进入同一聊天；首词不会被当成路由条件。若部署后仍出现此行为，检查运行镜像是否为本功能分支构建、是否仍给旧修订版分配流量，以及手机有没有把该手势发到正确的 `/index`。
-
-#### Muse 只有文字，没有录音条
-
-先检查 Pebble 对应手势的 **Webhook settings → Recent runs**。成功记录中的 `recording + transcription` 表示实际上传了两者；`transcription` 表示只上传文字。这些标签由[实际载荷内容生成](https://github.com/coredevices/mobileapp/blob/1.18.0/experimental/src/commonMain/kotlin/coredevices/ring/external/indexwebhook/IndexWebhookApi.kt#L368-L373)，比仅看所选模式更直接。
-
-Webhook 配置按手势分别保存。确认页面标题为 **Webhook · Double click & hold**，选 **Both** 后点 **Save**，再用该手势录制一条**全新消息**。修改模式不会给旧的排队任务补上录音：发送操作先[选定载荷并保存文件 ID](https://github.com/coredevices/mobileapp/blob/1.18.0/experimental/src/commonMain/kotlin/coredevices/ring/service/recordings/button/IndexWebhookUploadRecordingOperation.kt#L34-L95)，队列随后使用[任务中已有的文件 ID 和转写](https://github.com/coredevices/mobileapp/blob/1.18.0/experimental/src/commonMain/kotlin/coredevices/ring/external/indexwebhook/IndexWebhookDeliveryQueue.kt#L47-L84)。重试旧的文字任务仍然只发文字。
-
-若 Recent runs 确认同时上传，再核对云端接收和提交记录。App 中只有文字本身不足以证明音频在中转或 Muse 中丢失。桥接收到无效或超限音频会返回错误，不会静默改发文字；用于比较的测试必须是同一条新录音。
-
-Both 中的文字是独立文本项，不是告诉 Muse“录音已经完成识别”的元数据。官方[语音接口](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/linux/src/musegadget/link_client.py#L404-L434)把文字和录音一并提交，官方[说明](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/esp32/README.md#L341-L343)写明 Muse 会转写语音笔记。实测出现“Pebble 原文后面附加另一段识别文字”，与 Muse 再次识别录音相符；具体后台拼接方式仍是推断。桥接不会生成或追加这段识别内容，公开接口也没有关闭录音识别或指定权威转写的参数。
-
-#### Muse 手机有回答，Apple Watch 没提示
-
-官方 [Muse from Meta App Store 页面](https://apps.apple.com/us/app/muse-from-meta/id6760173601) 的 Watch 支持说明，不代表 Gadget SDK 触发的回答必然产生 Watch 推送。目前 Watch App 已安装，账户同步和回答推送仍待验证。本方案没有接入私有通知 API；先以 Muse 主聊天中的消息与回答为准。
-
-### 4.6 更新、密钥轮换、回滚和停用
-
-#### 更新代码
+##### 更新代码
 
 重新运行离线测试、`build`、`deploy-private`。检查服务 IAM 与最新修订版后，若需要对手机重新开放，运行 `publish`。更新应用**不需要**重新上传配对文件。云端 `state/muse.json` 是已经刷新的有效状态，不能用原 Mac/Linux 的旧文件覆盖它。
 
@@ -444,7 +356,7 @@ bash "$BRIDGE_DIR/deploy.sh" deploy-private "$PROJECT_ID"
 bash "$BRIDGE_DIR/deploy.sh" status "$PROJECT_ID"
 ```
 
-#### 轮换 Webhook 密钥
+##### 轮换 Webhook 密钥
 
 先暂停公网调用，生成新的本地文件，以 generation 前置条件替换 `state/webhook.json`，再更新手机相同手势中的两项密钥并重新开放。密钥会在进程中缓存最多 60 秒；更新时留出缓存过期时间，或部署新修订版后确认生效。下面不读取或打印旧密钥：
 
@@ -471,9 +383,9 @@ gcloud storage cp "$ROTATED_KEYS" \
 KEYS_FILE="$ROTATED_KEYS"
 ```
 
-按第 3.4 步用新 `KEYS_FILE` 修改手机对应手势的密钥，确认 60 秒缓存窗口过去，再执行 `publish` 和不发聊天的连通性检查。以后继续使用新的 keys 路径；不要再用旧密钥或旧设置页。若设备凭证泄露，除轮换入口密钥外，还需在 Muse 中撤销相应设备/SDK token，重新配对；改变 Webhook 密钥不能撤销已经泄露的 Muse 设备权限。
+按第 3.2.4 步用新 `KEYS_FILE` 修改手机对应手势的密钥，确认 60 秒缓存窗口过去，再执行 `publish` 和不发聊天的连通性检查。以后继续使用新的 keys 路径；不要再用旧密钥或旧设置页。若设备凭证泄露，除轮换入口密钥外，还需在 Muse 中撤销相应设备/SDK token，重新配对；改变 Webhook 密钥不能撤销已经泄露的 Muse 设备权限。
 
-#### 回滚应用
+##### 回滚应用
 
 先查看修订版，选择确知兼容当前状态格式和最终直通行为的版本；只回滚应用，不回滚令牌对象。旧镜像可能被七天清理策略删除，计划回滚时需确认它仍可用。
 
@@ -486,9 +398,9 @@ gcloud run services update-traffic muse-ring-bridge \
   --to-revisions="$PREVIOUS_REVISION=100"
 ```
 
-回滚后检查 `/health`、签名测试和一次明确选择的真实消息。不要把曾有前缀过滤或文件权限故障的旧版本当成可用回滚点。
+回滚后检查 `/health`、签名测试和一次明确选择的真实消息。
 
-#### 暂停或完全删除
+##### 暂停或完全删除
 
 临时暂停可使用上面的 `remove-iam-policy-binding`，并在 Pebble 中关闭该手势的 Webhook。IAM 更改前已开始的请求可能仍会结束，暂停不等于撤回已经给 Muse 的任务。
 
@@ -516,31 +428,92 @@ gcloud iam service-accounts delete \
 
 不要为清理本方案关闭共享项目中其他服务所需的 API，或删除其他应用的日志与账单记录。本方案的源码可以公开分享；真实凭证、私有生成页、录音、聊天记录和个人部署身份始终留在仓库之外。
 
-### 4.7 注册 Google Cloud 并准备项目
+##### 当前诊断规则
+
+- Mac 使用实际的预编译 Python／Git，避免触发不可用 Apple 开发工具下载的系统占位程序。
+- Cloud Build 403 先核对项目、API、构建身份和 IAM 生效情况，不要授予运行账号项目 Owner。
+- Muse 握手失败时保留有效配对、TLS 和签名，查看受限诊断；不要盲目重置身份或重放确认不明的投递。
+- 只有文字展示时，检查新手势录音的 Recent runs 实际载荷；音频展示方式由 Muse 决定。
+
+
+</details>
+
+## 4. FYI：实现与维护
+
+### 4.1 各部分实际在哪里运行
+
+看自己拥有的资源，只需区分 **本地 Mac／Linux 电脑**和**自己的 Google Cloud 项目**。Cloud Run 是托管运行中转程序的地方，不需要自己管理一台虚拟机；Cloud Storage 是存文件的地方，不是另一台运行程序的电脑。
+
+| 位置 | 做什么／对应哪些文件 | 什么时候需要 |
+| --- | --- | --- |
+| 本地 Mac 或 Linux 电脑 | 做蓝牙配对；Mac 用 `mac_pairing.py`，Linux 用官方安装器。同一台电脑也可执行部署命令。 | 首次配对和上传状态；以后可选地做管理操作。日常使用时可以关机。 |
+| Google Cloud → **Cloud Run** | 运行 `app.py`、`muse_sender.py`、`muse_transport.py`、`audio.py` 和共享的 `pebble_ring_bridge.py`，接收 Webhook 并发送给 Muse。 | 每条笔记到达时；空闲实例可缩到零。 |
+| Google Cloud → **Cloud Storage** | 保存配对凭证、Webhook 密钥、租约和投递状态。“桶”就是存这些文件的容器；中转不保留笔记正文／录音。 | 在请求之间持续保存状态，即使 Cloud Run 暂无运行实例也保留。 |
+| 部署终端：**本地 Mac／Linux 终端，或 Cloud Shell** | 运行 `deploy.sh`、`verify_webhook.py` 和检查。Cloud Shell 在浏览器里打开，但命令实际运行在 Google 的环境中。 | 部署、更新和检查时使用，不参与日常转发；部署终端选一种即可。 |
+| Google Cloud → **Cloud Build + Artifact Registry** | 根据 `Dockerfile` 和依赖打包、测试，把生成的镜像保存起来供 Cloud Run 启动。 | 发布版本时运行构建，之后镜像保留；配对凭证不进入构建。 |
+| GitHub | 保存公开源码、指南和 PR 历史。 | 分发代码／审阅，不接收戒指 Webhook。 |
+| Meta Muse | 处理提交的指令并生成回答。 | 每条提交的指令；它与自己的 Mac、Google 项目是不同的服务。 |
+
+官方介绍：[Cloud Run](https://docs.cloud.google.com/run/docs/overview/what-is-cloud-run)、[Cloud Storage](https://docs.cloud.google.com/storage/docs/introduction)、[Cloud Shell](https://docs.cloud.google.com/shell/docs)、[Cloud Build](https://docs.cloud.google.com/build/docs/overview)。中转没有托管在 Codex/OpenAI 的机器上。GitHub 上传与 Google 部署是两件事，本仓库没有“合并即部署”的自动流程。
+
+### 4.2 相对原始 Muse 官方示例的变化
+
+| 行为 | 原官方示例 | 本方案 |
+| --- | --- | --- |
+| 主机和连接 | Linux 常驻服务，依赖本机 SDK socket | Cloud Run 按请求连接官方 SDK；无常开 Mac、VPN 或隧道 |
+| 聊天目标 | 必须指定 side chat；追加 `[via Pebble Ring]` 文本后缀 | 固定 Muse 主聊天；转写仅清理首尾空白，不加后缀、暗号或路由 |
+| 输入 | 提取文字，不把录音作为语音提交 | Both 同条提交转写和录音；兼容仅文字、仅录音 |
+| 音频 | 没有音频转换 | 本地 FFmpeg 转 WAV，超限整条拒绝，不截断后执行 |
+| Webhook 协议 | `/ingest`；multipart、JSON 或纯文本；共享令牌 | `/index`；Pebble v1 multipart、Bearer、HMAC、时间戳窗口 |
+| 测试事件 | 没有 Pebble v1 测试事件的专门处理 | 验签后只返回连通结果，不向 Muse 下达测试任务 |
+| 云端状态 | 交给本地常驻 SDK 服务 | 私有 GCS 保存轮换状态、CAS 租约与投递记录 |
+| 重复与不确定投递 | 没有持久投递记录 | 同一 ID 去重；已尝试但确认不明时不自动重发 |
+| 主机命令权限 | 依赖已安装的通用 SDK 服务 | 中转不注册 shell、文件读写或其他主机命令 |
+| 网络目的地 | SDK 支持自定义端点和重定向 | 固定官方 Muse 地址、拒绝重定向／环境代理；固定 Google Storage 端点 |
+| 部署、验证、复现 | 一个本地监听示例 | 增加容器、最小权限部署、对应模块测试及本指南 |
+
+**固定的 SDK 版本：** [Meta 官方提交 `08f89ed`](https://github.com/facebookincubator/muse-gadget-sdk/commit/08f89ed329918c27d53b11192065ad6b2cb0e868)。这是**公开 Git 仓库的源码版本编号**，使用该版本的人都用同一个编号；不是你的 SDK token、账号、设备身份或配对码。[运行文件与对应测试](linux/examples/pebble_ring_bridge_cloudrun/README.md)。
+
+### 4.3 最终行为与限制
+
+| 最终行为／限制 | 对使用者意味着什么 |
+| --- | --- |
+| 载荷 | **Both** 在同一条 Muse 消息里提交 Pebble 转写和完整转换后的录音；也兼容仅录音、仅文字。Muse 决定如何使用／展示，可能再次转写录音。 |
+| 录音 | 输入最多 **8 MiB、60 秒**，在云端本地转为 PCM16 单声道 16 kHz WAV（SDK 上限 2 MiB）；无效或过长录音整条拒绝，不截断后执行。 |
+| 投递 | `delivered` 是提交确认，不等于任务完成。确认不明时先到 Muse 核对，再决定是否重发；重复请求不自动重复执行。 |
+| 延迟 | Pebble／iOS 后台收录和语音识别可能延迟上传；手机发送笔记后，中转才能处理。 |
+| 保存与访问 | 私有存储保存轮换凭证、Webhook 密钥和投递状态，不保存正文／录音。Google 日志可能保留请求元数据；管理员／服务商访问权限仍适用。 |
+| 连接范围 | 云端转发固定连接官方 Muse／Google 地址；拒绝 Muse 重定向／环境代理，以及 Storage 端点覆盖。这是应用层限制，不是操作系统沙箱，也不限制其他 App 或服务商后台。 |
+| 可用性 | 2026-11-18 的受控复验在提交前遇到 Muse Link HTTP 502，该次投递尚未确认；这不代表已确认 Meta 全局故障。部署验收前需验证一条新的真实消息。 |
+| 手表 | 官方 Muse 支持 Watch，但本桥接回答的同步和通知仍未验证。 |
+
+服务闲时缩到零，低频使用可能落入免费额度，但预算提醒不是硬性消费上限。请核对[当前定价](https://cloud.google.com/run/pricing)和[实际花费](#46-查看实际花费)。文件／测试细节和审查历史可查[代码目录](linux/examples/pebble_ring_bridge_cloudrun/README.md)及 [PR](https://github.com/wli12/muse-gadget-sdk-for-pebble-ring/pull/1)。
+
+### 4.4 注册 Google Cloud 并准备项目
 
 1. 打开 [Google Cloud 官方免费入口](https://cloud.google.com/free)，用已有 Google 账户登录，或按页面创建 Google 账户。符合条件的新用户可以选择官方免费试用；额度、期限和资格以该页面为准。
 2. 按 Google 注册页面填写实际地区及所需信息，完成身份和付款方式验证。**即使用免费额度，项目仍需要有效的结算账户。** 详见[结算账户说明](https://docs.cloud.google.com/billing/docs/how-to/create-billing-account)与[免费试用 FAQ](https://cloud.google.com/signup-faqs)。
-3. 进入 [Google Cloud Console](https://console.cloud.google.com/)，打开项目选择器，选择 **New project / 新建项目**，创建本方案专用项目；详见[创建项目](https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects)。记下 **Project ID**，后面填入 `PROJECT_ID`；它不是项目显示名称或项目数字编号。
+3. 进入 [Google Cloud Console](https://console.cloud.google.com/)，打开项目选择器，选择 **New project / 新建项目**，创建本方案专用项目；详见[创建项目](https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects)。记下 **Project ID**，部署时填入 `PROJECT_ID`；它不是项目显示名称或项目数字编号。
 4. 在项目的 **Billing / 结算** 页面，确认项目已关联可用结算账户；如未关联，按[关联结算账户说明](https://docs.cloud.google.com/billing/docs/how-to/modify-project)操作。项目与结算账户是两个不同概念。
-5. 在 Console 右上角启动 **Cloud Shell**（已预装 `gcloud`），或在本机安装 Google Cloud CLI。第 3.1 步会执行 `gcloud auth login` 并选择项目；BLE 配对仍在本地 Mac/Linux 完成。
+5. 在 Console 右上角启动 **Cloud Shell**（已预装 `gcloud`），或在本机安装 Google Cloud CLI。Codex 操作参考会执行 `gcloud auth login` 并选择项目；BLE 配对仍在本地 Mac/Linux 完成。
 6. 可为该项目设置[预算提醒](https://docs.cloud.google.com/billing/docs/how-to/budgets)。提醒型预算不会自动停止消费。少量使用可能落入免费额度，但不能保证永久零账单；试用不会自动升级成付费账户，试用到期后资源可能停止，是否升级由账户所有者决定。费用与资源限制见第 4.3 节。
 
-### 4.8 免费试用金
+### 4.5 免费试用金
 
 **核对于 2026-11-18：** Google 当前为符合条件的新用户提供 **300 美元 Free Trial Credits，有效期 90 天**。后续复现时，请通过 [Google Cloud 免费入口](https://cloud.google.com/free)和[官方试用说明](https://docs.cloud.google.com/free/docs/free-cloud-features)核对当时的金额与资格。
 
 试用金与每月 Free Tier 免费额度是两回事。**在试用金有效且有余额时，超出免费额度的符合条件用量可以先抵扣试用金**，因此少量超额不一定需要自己付钱。[官方 FAQ](https://cloud.google.com/signup-faqs)解释了适用范围和计费：没有手动升级时，试用金耗尽或试用到期会关闭试用结算账户并停止资源，不会自动转为扣费；手动升级付费账户后，未被覆盖的用量可能收费。请在自己的 Billing 页面确认账户状态、余额和到期日；试用金不等于永久免费。
 
-### 4.9 查看实际花费
+### 4.6 查看实际花费
 
 1. 打开 [Google Cloud 费用报告](https://console.cloud.google.com/billing/reports)，选择当前项目关联的结算账户。
 2. 日期选本月，或从部署日期到今天；在 **Projects / 项目** 中只选自己的 `PROJECT_ID`，再用 **Group by → Service / 按服务分组**，分别看 Cloud Run、Cloud Storage、Cloud Build 和 Artifact Registry。
 3. 同时查看使用费用、**Savings / 抵扣与折扣**以及抵扣后的 **Subtotal / 小计**；也看抵扣前费用，区分“被试用额度抵扣”和“没有资源消耗”。正式账单可切到结算周期，或查看 [Cost table / 费用明细表](https://docs.cloud.google.com/billing/docs/how-to/cost-table)。
 4. 费用数据有延迟，刚部署显示 0 不代表最终账单为 0。详见[官方费用报告说明](https://docs.cloud.google.com/billing/docs/how-to/reports)。
 
-Cloud Run 的免费额度按结算账户跨项目汇总；存储、构建、镜像存储及网络分别有自己的价格和额度。这是适合低频使用的低成本选择，不保证零账单；第 4.3 节有各项定价链接。
+Cloud Run 的免费额度按结算账户跨项目汇总；存储、构建、镜像存储及网络分别有自己的价格和额度。这是适合低频使用的低成本选择，不保证零账单；上方有定价参考链接。
 
-### 4.10 许可证
+### 4.7 许可证
 
 Muse Gadgets 使用 [Apache License 2.0](LICENSE)。下列第三方文件保留各自的上游许可证；此 fork 保留原有文件和许可证说明。此表对应[原版 SDK 的许可证清单](https://github.com/facebookincubator/muse-gadget-sdk/blob/08f89ed329918c27d53b11192065ad6b2cb0e868/README.md#license)。
 
